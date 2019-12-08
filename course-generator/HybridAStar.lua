@@ -294,7 +294,7 @@ function HybridAStar:findPath(start, goal, length, width, turnRadius, allowRever
 
 		self.count = self.count + 1
 		-- yield only when we were started in a coroutine.
-		if coroutine.running() and self.count % 500 == 0 then
+		if coroutine.running() and self.count % 200 == 0 then
 			self.yields = self.yields + 1
 			coroutine.yield(false)
 		end

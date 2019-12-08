@@ -638,12 +638,6 @@ end
 -- speed set in this loop.
 function AIDriver:setSpeed(speed)
 	self.speed = math.min(self.speed, speed)
-	if self.speed > 0 and self.allowedToDrive then
-		self:setLastMoveCommandTime(self.vehicle.timer)
-		if self.vehicle:getLastSpeed() > 0.5 then
-			self.lastRealMovingTime = self.vehicle.timer
-		end
-	end
 end
 
 function AIDriver:setLastMoveCommandTime(timer)
@@ -652,6 +646,12 @@ end
 
 --- Reset drive controls at the end of each loop
 function AIDriver:resetSpeed()
+	if self.speed > 0 and self.allowedToDrive then
+		self:setLastMoveCommandTime(self.vehicle.timer)
+		if self.vehicle:getLastSpeed() > 0.5 then
+			self.lastRealMovingTime = self.vehicle.timer
+		end
+	end
 	-- reset speed limit for the next loop
 	self.speed = math.huge
 	self.allowedToDrive = true
@@ -1295,7 +1295,7 @@ function AIDriver:driveToPointWithPathfinding(tx, tz, course, ix)
 end
 
 function AIDriver:updatePathfinding()
-	if self.pathfinder:isActive() then
+	if self.pathfinder and self.pathfinder:isActive() then
 		-- stop while pathfinding is running
 		self:setSpeed(0)
 		local done, path = self.pathfinder:resume()

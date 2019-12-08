@@ -126,7 +126,12 @@ end
 
 function CombineAIDriver:onEndCourse()
 	local fillLevel = self.vehicle:getFillUnitFillLevel(self.combine.fillUnitIndex)
-	if self.state == self.states.ON_FIELDWORK_COURSE and fillLevel > 0 then
+	if self.state == self.states.ON_FIELDWORK_COURSE and
+			self.fieldworkState == self.states.UNLOAD_OR_REFILL_ON_FIELD and
+			self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
+		self:debug('Self unloading point reached.', fillLevel)
+		self.fieldWorkUnloadOrRefillState = self.states.SELF_UNLOADING
+	elseif self.state == self.states.ON_FIELDWORK_COURSE and fillLevel > 0 then
 		self:setInfoText(self:getFillLevelInfoText())
 		-- let AutoDrive know we are done and can unload
 		self:debug('Fieldwork done, fill level is %.1f, now waiting to be unloaded.', fillLevel)
@@ -172,6 +177,7 @@ function CombineAIDriver:changeToFieldworkUnloadOrRefill()
 		if self.vehicle.cp.settings.selfUnload:is(true) and self:startSelfUnload() then
 			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
 			self.fieldWorkUnloadOrRefillState = self.states.DRIVING_TO_SELF_UNLOAD
+			self:rememberWaypointToContinueFieldwork()
 		elseif self:shouldMakePocket() then
 			-- I'm on the edge of the field or fruit is on both sides, make a pocket on the right side and wait there for the unload
 			local pocketCourse, nextIx = self:createPocketCourse()
@@ -274,7 +280,16 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 			end
 		end
 	elseif self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
-		self:setSpeed(10)
+		self:setSpeed(self.vehicle.cp.speeds.field)
+	elseif self.fieldWorkUnloadOrRefillState == self.states.SELF_UNLOADING then
+		self:setSpeed(0)
+		if self:unloadFinished() then
+			self:debug('Self unloading finished, returning to fieldwork')
+			self:returnToFieldworkAfterSelfUnloading()
+		 	self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
+		end
+	elseif self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD then
+		self:setSpeed(self.vehicle.cp.speeds.field)
 	else
 		UnloadableFieldworkAIDriver.driveFieldworkUnloadOrRefill(self)
 	end
@@ -289,6 +304,9 @@ function CombineAIDriver:onNextCourse(ix)
 			self:setInfoText(self:getFillLevelInfoText())
 		elseif self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_PULL_BACK then
 			self:debug('Pull back finished, returning to fieldwork')
+			self:changeToFieldwork()
+		elseif self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD then
+			self:debug('Back from self unload, returning to fieldwork')
 			self:changeToFieldwork()
 		elseif self.fieldWorkUnloadOrRefillState == self.states.REVERSING_TO_MAKE_A_POCKET then
 			self:debug('Reversed, now start making a pocket to waypoint %d', self.unloadInPocketIx)
@@ -872,7 +890,7 @@ function CombineAIDriver:startSelfUnload()
 		self.courseAfterPathfinding = nil
 		self.waypointIxAfterPathfinding = nil
 		local done, path
-		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset, true)
+		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset, false)
 		if done then
 			return self:onPathfindingDone(path)
 		end
@@ -882,11 +900,29 @@ function CombineAIDriver:startSelfUnload()
 	return true
 end
 
+function CombineAIDriver:returnToFieldworkAfterSelfUnloading()
+	if not self.pathfinder or not self.pathfinder:isActive() then
+		self.pathFindingStartedAt = self.vehicle.timer
+		self.courseAfterPathfinding = self.fieldworkCourse
+		self.waypointIxAfterPathfinding = self.aiDriverData.continueFieldworkAtWaypoint
+		local done, path
+		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToWaypoint(
+				self.vehicle, self.fieldworkCourse:getWaypoint(self.waypointIxAfterPathfinding), false)
+		if done then
+			return self:onPathfindingDone(path)
+		end
+	else
+		self:debug('Pathfinder already active')
+	end
+	return true
+
+end
+
 function CombineAIDriver:onPathfindingDone(path)
 	self:debug('Pathfinding finished with %d waypoints (%d ms)', #path, self.vehicle.timer - (self.pathFindingStartedAt or 0))
 	if path and #path > 2 then
 		local selfUnloadCourse = Course(self.vehicle, courseGenerator.pointsToXzInPlace(path), true)
-		self:startCourse(selfUnloadCourse, 1)
+		self:startCourse(selfUnloadCourse, 1, self.courseAfterPathfinding, self.waypointIxAfterPathfinding)
 		return true
 	else
 		return false
