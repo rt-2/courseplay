@@ -175,6 +175,7 @@ function CombineAIDriver:changeToFieldworkUnloadOrRefill()
 		self:checkFruit()
 		-- TODO: check around turn maneuvers we may not want to pull back before a turn
 		if self.vehicle.cp.settings.selfUnload:is(true) and self:startSelfUnload() then
+			self:raiseImplements()
 			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
 			self.fieldWorkUnloadOrRefillState = self.states.DRIVING_TO_SELF_UNLOAD
 			self:rememberWaypointToContinueFieldwork()
@@ -862,16 +863,20 @@ function CombineAIDriver:findBestTrailer()
 				attacherVehicle = vehicle.spec_attachable:getAttacherVehicle()
 			end
 			local fieldNum = courseplay.fields:onWhichFieldAmI(vehicle)
+			local myFieldNum = courseplay.fields:onWhichFieldAmI(self.vehicle)
 			local x, _, z = getWorldTranslation(vehicle.rootNode)
-			local closestDistance = courseplay.fields:getClosestDistanceToFieldEdge(fieldNum, x, z)
+			local closestDistance = courseplay.fields:getClosestDistanceToFieldEdge(myFieldNum, x, z)
 			self:debug('%s is a trailer on field %d, closest distance to %d is %.1f, attached to %s, root vehicle is %s', vehicle:getName(),
-					fieldNum, fieldNum, closestDistance, attacherVehicle and attacherVehicle:getName() or 'none', rootVehicle:getName())
-			local d = courseplay:distanceToObject(self.vehicle, vehicle)
-			local canLoad, freeCapacity = self:canLoadTrailer(vehicle)
-			if d < minDistance and canLoad then
-				bestTrailer = vehicle
-				minDistance = d
-				maxCapacity = freeCapacity
+					fieldNum, myFieldNum, closestDistance, attacherVehicle and attacherVehicle:getName() or 'none', rootVehicle:getName())
+			-- consider only trailer on my field or close to my field
+			if fieldNum == myFieldNum or myFieldNum == 0 or closestDistance < 20 then
+				local d = courseplay:distanceToObject(self.vehicle, vehicle)
+				local canLoad, freeCapacity = self:canLoadTrailer(vehicle)
+				if d < minDistance and canLoad then
+					bestTrailer = vehicle
+					minDistance = d
+					maxCapacity = freeCapacity
+				end
 			end
 		end
 	end
@@ -919,12 +924,14 @@ function CombineAIDriver:returnToFieldworkAfterSelfUnloading()
 end
 
 function CombineAIDriver:onPathfindingDone(path)
-	self:debug('Pathfinding finished with %d waypoints (%d ms)', #path, self.vehicle.timer - (self.pathFindingStartedAt or 0))
 	if path and #path > 2 then
+		self:debug('Pathfinding finished with %d waypoints (%d ms)', #path, self.vehicle.timer - (self.pathFindingStartedAt or 0))
 		local selfUnloadCourse = Course(self.vehicle, courseGenerator.pointsToXzInPlace(path), true)
 		self:startCourse(selfUnloadCourse, 1, self.courseAfterPathfinding, self.waypointIxAfterPathfinding)
 		return true
 	else
+		self:debug('No path found in %d ms, no self unloading', self.vehicle.timer - (self.pathFindingStartedAt or 0))
+		self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_OR_REFILL
 		return false
 	end
 end
