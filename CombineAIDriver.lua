@@ -895,7 +895,7 @@ function CombineAIDriver:startSelfUnload()
 		self.courseAfterPathfinding = nil
 		self.waypointIxAfterPathfinding = nil
 		local done, path
-		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset, false)
+		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset, true)
 		if done then
 			return self:onPathfindingDone(path)
 		end
@@ -912,7 +912,7 @@ function CombineAIDriver:returnToFieldworkAfterSelfUnloading()
 		self.waypointIxAfterPathfinding = self.aiDriverData.continueFieldworkAtWaypoint
 		local done, path
 		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToWaypoint(
-				self.vehicle, self.fieldworkCourse:getWaypoint(self.waypointIxAfterPathfinding), false)
+				self.vehicle, self.fieldworkCourse:getWaypoint(self.waypointIxAfterPathfinding), true)
 		if done then
 			return self:onPathfindingDone(path)
 		end
@@ -927,6 +927,8 @@ function CombineAIDriver:onPathfindingDone(path)
 	if path and #path > 2 then
 		self:debug('Pathfinding finished with %d waypoints (%d ms)', #path, self.vehicle.timer - (self.pathFindingStartedAt or 0))
 		local selfUnloadCourse = Course(self.vehicle, courseGenerator.pointsToXzInPlace(path), true)
+		selfUnloadCourse:print()
+		self:disableCollisionDetection()
 		self:startCourse(selfUnloadCourse, 1, self.courseAfterPathfinding, self.waypointIxAfterPathfinding)
 		return true
 	else

@@ -70,6 +70,10 @@ function PathfinderInterface:resume(...)
 	return false
 end
 
+function PathfinderInterface:debug(...)
+    courseGenerator.debug(...)
+end
+
 
 ---@class HybridAStar
 HybridAStar = CpObject(PathfinderInterface)
@@ -222,6 +226,25 @@ function HybridAStar.NodeList:print()
 	end
 end
 
+---Size/turn radius all other information on the vehicle
+---@class HybridAStar.VehicleData
+HybridAStar.VehicleData = CpObject()
+
+---@param name string name of the vehicle
+---@param turnRadius number turning radius of the vehicle
+---@param dFront number distance of the vehicle's front from the node
+---@param dRear number distance of the vehicle's rear from the node
+---@param dLeft number distance of the vehicle's left side from the node
+---@param dRight number distance of the vehicle's right side from the node
+function HybridAStar.VehicleData:init(name, turnRadius, dFront, dRear, dLeft, dRight)
+	self.name = name
+	self.turnRadius = turnRadius
+	self.dFront = dFront
+	self.dRear = dRear
+	self.dLeft = dLeft
+	self.dRight = dRight
+end
+
 function HybridAStar:init()
 	self.count = 0
 	self.yields = 0
@@ -232,10 +255,6 @@ function HybridAStar:init()
 	-- if the goal heading is within self.deltaThetaDeg degrees we consider it reached
 	self.deltaThetaDeg = 5
 	-- the same two parameters are used to discretize the continuous state space
-end
-
-function HybridAStar:debug(...)
-	courseGenerator.debug(...)
 end
 
 --- Calculate penalty for this node. The penalty will be added to the cost of the node. This allows for
@@ -255,16 +274,15 @@ end
 
 ---@param start State3D start node
 ---@param goal State3D goal node
----@param length number length of the vehicle
----@param width number width of the vehicle, used with length to find nodes invalid due to collision
----@param turnRadius number turn radius of the vehicle
+---@param vehicleData HybridAStar.VehicleData
 ---@param allowReverse boolean allow reverse driving
 ---@param getNodePenaltyFunc function get penalty for a node, see getNodePenalty()
-function HybridAStar:findPath(start, goal, length, width, turnRadius, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+function HybridAStar:findPath(start, goal, vehicleData, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+	self:debug('Start pathfinding between %s and %s', tostring(start), tostring(goal))
 	if not getNodePenaltyFunc then getNodePenaltyFunc = self.getNodePenalty end
 	if not isValidNodeFunc then isValidNodeFunc = self.isValidNode end
 	-- a motion primitive is straight or a few degree turn to the right or left
-	local hybridMotionPrimitives = self:getMotionPrimitives(turnRadius, allowReverse)
+	local hybridMotionPrimitives = self:getMotionPrimitives(vehicleData.turnRadius, allowReverse)
 
 	-- create the open list for the nodes as a binary heap where
 	-- the node with the lowest total cost is at the top
@@ -282,7 +300,7 @@ function HybridAStar:findPath(start, goal, length, width, turnRadius, allowRever
 	self.expansions = 0
 	self.yields = 0
 
-	while openList:size() > 0 and self.iterations < 200000 do
+	while openList:size() > 0 and self.iterations < 100000 do
 		-- pop lowest cost node from queue
 		---@type State3D
 		local pred = State3D.pop(openList)
@@ -305,18 +323,18 @@ function HybridAStar:findPath(start, goal, length, width, turnRadius, allowRever
 			for _, primitive in ipairs(hybridMotionPrimitives:getPrimitives()) do
 				---@type State3D
 				local succ = pred:createSuccessor(primitive)
+				if succ:equals(goal, self.deltaPos, math.rad(self.deltaThetaDeg)) then
+					succ.pred = succ.pred
+					self:rollUpPath(succ, goal)
+					return true, self.path
+				end
 				local existingSuccNode = self.nodes:get(succ)
 				if not existingSuccNode or (existingSuccNode and not existingSuccNode:isClosed()) then
-					if isValidNodeFunc(succ, length, width) then
+					if isValidNodeFunc(succ, vehicleData) then
 						succ:updateG(primitive, getNodePenaltyFunc(succ))
-						succ:updateH(goal, turnRadius)
+						succ:updateH(goal, vehicleData.turnRadius)
 						if existingSuccNode then
 							-- there is already a node at this (discretized) position
-							if existingSuccNode:equals(goal, self.deltaPos, math.rad(self.deltaThetaDeg)) then
-								existingSuccNode.pred = succ.pred
-								self:rollUpPath(existingSuccNode, goal)
-								return true, self.path
-							end
 							if existingSuccNode:getCost() + 0.1 > succ:getCost() then
 								-- successor cell already exist but the new one is cheaper, replace
 								-- may add 0.1 to the existing one's cost to prefer replacement
@@ -385,7 +403,7 @@ AStar = CpObject(HybridAStar)
 
 function AStar:init()
 	HybridAStar.init(self)
-	self.deltaPos = 4
+	self.deltaPos = 5
 	self.deltaThetaDeg = 181
 end
 
@@ -413,40 +431,39 @@ end
 
 ---@param start State3D start node
 ---@param goal State3D goal node
----@param length number length of the vehicle
----@param width number width of the vehicle, used with length to find nodes invalid due to collision
----@param turnRadius number turn radius of the vehicle
+---@param vehicleData HybridAStar.VehicleData
 ---@param allowReverse boolean allow reverse driving
 ---@param getNodePenaltyFunc function function to calculate the penalty for a node. Typically you want to penalize
 --- off-field locations and locations with fruit on the field.
 ---@param isValidNodeFunc function function to check if a node should even be considered
-function HybridAStarWithAStarInTheMiddle:start(start, goal, length, width, turnRadius, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+function HybridAStarWithAStarInTheMiddle:start(start, goal, vehicleData, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
 	self.hybridAStarPathFinder = HybridAStar()
 	self.aStarPathFinder = AStar()
 	self.retries = 0
 	self.startNode, self.goalNode = State3D:copy(start), State3D:copy(goal)
-	self.length, self.width = length, width
-	self.turnRadius, self.allowReverse = turnRadius, allowReverse
+	self.vehicleData, self.allowReverse = vehicleData, allowReverse
 	self.getNodePenaltyFunc = getNodePenaltyFunc
 	self.isValidNodeFunc = isValidNodeFunc
-	self.hybridRange = self.hybridRange and self.hybridRange or turnRadius * 3
+	self.hybridRange = self.hybridRange and self.hybridRange or vehicleData.turnRadius * 3
 	-- how far is start/goal apart?
 	self.startNode:updateH(self.goalNode)
 	-- do we even need to use the normal A star or the nodes are close enough that the hybrid A star will be fast enough?
 	if self.startNode:getCost() < self.hybridRange * 3 then
 		self.phase = self.ALL_HYBRID
+        self:debug('Goal is closer than %d, use one phase pathfinding only', self.hybridRange * 3)
 		self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 		self.currentPathFinder = self.hybridAStarPathFinder
-		-- swap start and goal as the path will always start exactly at the start point but will only approximatly end
+		-- swap start and goal as the path will always start exactly at the start point but will only approximately end
 		-- at the goal. Here we want to end up exactly on the goal point
 		self.startNode:reverseHeading()
 		self.goalNode:reverseHeading()
-		return self:resume(self.goalNode, self.startNode, self.length, self.width, turnRadius, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+		return self:resume(self.goalNode, self.startNode, self.vehicleData, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
 	else
 		self.phase = self.MIDDLE
+        self:debug('Finding direct path between start and goal...')
 		self.coroutine = coroutine.create(self.aStarPathFinder.findPath)
 		self.currentPathFinder = self.aStarPathFinder
-		return self:resume(start, goal, self.length, self.width, turnRadius, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
+		return self:resume(self.startNode, self.goalNode, self.vehicleData, false, getNodePenaltyFunc, isValidNodeFunc)
 	end
 end
 
@@ -474,17 +491,21 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 			self:fixReverseForCourseplay(result)
 			return true, result
 		elseif self.phase == self.MIDDLE then
-			-- middle part ready, now trim start and end to make room for the hybrid parts
+            -- middle part ready, now trim start and end to make room for the hybrid parts
 			self.middlePath = Polyline:new(path)
 			self.middlePath:calculateData()
 			self.middlePath:shortenStart(self.hybridRange)
 			self.middlePath:shortenEnd(self.hybridRange)
+            self:debug('Finding path between start and middle section...')
 			self.phase = self.START_TO_MIDDLE
 			-- generate a hybrid part from the start to the middle section's start
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 			self.currentPathFinder = self.hybridAStarPathFinder
 			local goal = State3D(self.middlePath[1].x, self.middlePath[1].y, self.middlePath[1].nextEdge.angle)
-			return self:resume(self.startNode, goal, self.length, self.width, self.turnRadius, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
+            print(tostring(self.middlePath))
+            print(tostring(self.startNode))
+            print(tostring(goal))
+			return self:resume(self.startNode, goal, self.vehicleData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
 		elseif self.phase == self.START_TO_MIDDLE then
 			-- start and middle sections ready
 			-- append middle to start
@@ -497,13 +518,15 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 			self.path:calculateData()
 			-- generate middle to end
 			self.phase = self.MIDDLE_TO_END
+            self:debug('Finding path between middle section and goal...')
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 			self.currentPathFinder = self.hybridAStarPathFinder
 			-- swap start and goal as the path will always start exactly at the start point but will only approximately end
 			-- at the goal. Here we want to end up exactly on the goal point
-			local start = State3D(self.middlePath[#self.middlePath].x, self.middlePath[#self.middlePath].y, reverseAngle(self.middlePath[#self.middlePath].prevEdge.angle))
+			local start = State3D(self.middlePath[#self.middlePath].x, self.middlePath[#self.middlePath].y, self.middlePath[#self.middlePath].prevEdge.angle)
+            start:reverseHeading()
 			self.goalNode:reverseHeading()
-			return self:resume(self.goalNode, start, self.length, self.width, self.turnRadius, self.allowReverse, self.getNodePenaltyFunc)
+            return self:resume(self.goalNode, start, self.vehicleData, self.allowReverse, self.getNodePenaltyFunc)
 		else
 			if path then
 				-- last piece is ready, this was generated from the goal point to the end of the middle section so
@@ -526,14 +549,17 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 end
 
 function HybridAStarWithAStarInTheMiddle:fixReverseForCourseplay(path)
+    print(tostring(path))
 	-- fix both ends first:
+    path:calculateData()
 	path[1].reverse = path[2].reverse
-	path[#path].reverse = path[#path - 1].reverse
+--	path[#path].reverse = path[#path - 1].reverse
 	-- the result of the hybrid A star changes direction one waypoint too early.
-	for i = #path - 1, 2, -1 do
-		if path[i].reverse ~= path[i - 1].reverse then
-			print(i)
-			path[i].reverse = path[i - 1].reverse
+    local currentReverse = path[1].reverse
+	for i = 2, #path do
+        path[i].reverse = currentReverse
+		if math.abs(getDeltaAngle(path[i].prevEdge.angle, path[i].nextEdge.angle)) > math.pi / 2 then
+            currentReverse = not currentReverse
 		end
 	end
 	path:calculateData()

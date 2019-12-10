@@ -19,26 +19,25 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 PathfinderUtil = {}
 
 --- Calculate the four corners of a rectangle around a node (for example the area covered by a vehicle)
-function PathfinderUtil.getCorners(node, length, width, name)
+function PathfinderUtil.getCollisionData(node, vehicleData)
     local x, y, z
-    local vehicleData = { node = node, width = width, length = length, name = name,
-                          corners = {}}
-    x, y, z = localToWorld(node, - width / 2, 0, - length / 2)
-    table.insert(vehicleData.corners, {x = x, y = y, z = z})
-    x, y, z = localToWorld(node, - width / 2, 0, length / 2)
-    table.insert(vehicleData.corners, {x = x, y = y, z = z})
-    x, y, z = localToWorld(node, width / 2, 0, length / 2)
-    table.insert(vehicleData.corners, {x = x, y = y, z = z})
-    x, y, z = localToWorld(node, width / 2, 0, - length / 2)
-    table.insert(vehicleData.corners, {x = x, y = y, z = z})
-    return vehicleData
+    local corners = {}
+    x, y, z = localToWorld(node, - vehicleData.dRight, 0, - vehicleData.dRear)
+    table.insert(corners, {x = x, y = y, z = z})
+    x, y, z = localToWorld(node, - vehicleData.dRight, 0, vehicleData.dFront)
+    table.insert(corners, {x = x, y = y, z = z})
+    x, y, z = localToWorld(node, vehicleData.dLeft, 0, vehicleData.dFront)
+    table.insert(corners, {x = x, y = y, z = z})
+    x, y, z = localToWorld(node, vehicleData.dLeft, 0, - vehicleData.dRear)
+    table.insert(corners, {x = x, y = y, z = z})
+    return {name = vehicleData.name, corners = corners}
 end
 
-function PathfinderUtil.findCollidingVehicles(myNode, length, width)
+function PathfinderUtil.findCollidingVehicles(myNode, vehicleData)
     if not PathfinderUtil.vehicleCollisionData then return false end
-    local myVehicle = PathfinderUtil.getCorners(myNode, length, width, 'me')
+    local myCollisionData = PathfinderUtil.getCollisionData(myNode, vehicleData, 'me')
     for _, collisionData in pairs(PathfinderUtil.vehicleCollisionData) do
-        if PathfinderUtil.doRectanglesOverlap(myVehicle.corners, collisionData.corners) then
+        if PathfinderUtil.doRectanglesOverlap(myCollisionData.corners, collisionData.corners) then
             return true, collisionData.name
         end
     end
@@ -52,8 +51,8 @@ function PathfinderUtil.setUpVehicleCollisionData(myVehicle)
     local myRootVehicle = myVehicle and myVehicle:getRootVehicle() or nil
     for _, vehicle in pairs(g_currentMission.vehicles) do
         if vehicle:getRootVehicle() ~= myRootVehicle and vehicle.rootNode and vehicle.sizeWidth and vehicle.sizeLength then
-            --courseplay.debugVehicle(14, myVehicle, 'othervehicle %s, otherroot %s, myroot %s', vehicle:getName(), vehicle:getRootVehicle():getName(), tostring(myRootVehicle))
-            table.insert(PathfinderUtil.vehicleCollisionData, PathfinderUtil.getCorners(vehicle.rootNode, vehicle.sizeLength, vehicle.sizeWidth, vehicle:getName()))
+            courseplay.debugVehicle(14, myVehicle, 'othervehicle %s, otherroot %s, myroot %s', vehicle:getName(), vehicle:getRootVehicle():getName(), tostring(myRootVehicle))
+            table.insert(PathfinderUtil.vehicleCollisionData, PathfinderUtil.getCollisionData(vehicle.rootNode, PathfinderUtil.getVehicleData(vehicle)))
         end
     end
 end
@@ -68,7 +67,7 @@ function PathfinderUtil.doRectanglesOverlap(a, b)
     for _, rectangle in pairs({a, b}) do
 
         -- leverage the fact that rectangles have parallel edges, only need to check the first two
-        for i = 1, 2 do
+        for i = 1, 3 do
             --grab 2 vertices to create an edge
             local p1 = rectangle[i]
             local p2 = rectangle[i + 1]
@@ -126,7 +125,7 @@ function PathfinderUtil.getNodePenalty(node)
     local penalty = 0
     local isField, area, totalArea = courseplay:isField(node.x, -node.y, areaSize, areaSize)
     if area / totalArea < minRequiredAreaRatio then
-        penalty = penalty + 1000
+        penalty = penalty + 100
     end
     if isField then
         local hasFruit
@@ -140,26 +139,40 @@ end
 
 --- Check if node is valid: would we collide with another vehicle here?
 ---@param node State3D
-function PathfinderUtil.isValidNode(node, length, width)
+---@param vehicleData HybridAStar.VehicleData
+function PathfinderUtil.isValidNode(node, vehicleData)
     if not PathfinderUtil.helperNode then
         PathfinderUtil.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
     end
     local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
     setTranslation(PathfinderUtil.helperNode, node.x, y, -node.y)
     setRotation(PathfinderUtil.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
-    return not PathfinderUtil.findCollidingVehicles(PathfinderUtil.helperNode, length, width)
+    return not PathfinderUtil.findCollidingVehicles(PathfinderUtil.helperNode, vehicleData)
+end
+
+---@return HybridAStar.VehicleData
+function PathfinderUtil.getVehicleData(vehicle)
+    local _, _, rootToDirectionNodeDistance = localToLocal(AIDriverUtil.getDirectionNode(vehicle), vehicle.rootNode, 0, 0, 0)
+    local turnRadius = vehicle.cp and vehicle.cp.turnDiameter and vehicle.cp.turnDiameter / 2 or 10
+    local name = vehicle.getName and vehicle:getName() or 'N/A'
+    return HybridAStar.VehicleData(
+            name,
+            turnRadius,
+            vehicle.sizeLength / 2 + vehicle.lengthOffset - rootToDirectionNodeDistance,
+            vehicle.sizeLength / 2 - vehicle.lengthOffset + rootToDirectionNodeDistance,
+            vehicle.sizeWidth / 2,
+            vehicle.sizeWidth / 2
+    )
 end
 
 --- Interface function to start the pathfinder
 ---@param start State3D start node
 ---@param goal State3D goal node
----@param length number length of the vehicle
----@param width number width of the vehicle, used with length to find nodes invalid due to collision
----@param turnRadius number turn radius of the vehicle
+---@param vehicleData HybridAStar.VehicleData
 ---@param allowReverse boolean allow reverse driving
-function PathfinderUtil.startPathfinding(start, goal, length, width, turnRadius, allowReverse)
+function PathfinderUtil.startPathfinding(start, goal, vehicleData, allowReverse)
     local pathfinder = HybridAStarWithAStarInTheMiddle(20)
-    local done, path = pathfinder:start(start, goal, length, width, turnRadius, allowReverse, PathfinderUtil.getNodePenalty, PathfinderUtil.isValidNode)
+    local done, path = pathfinder:start(start, goal, vehicleData, allowReverse, PathfinderUtil.getNodePenalty, PathfinderUtil.isValidNode)
     return pathfinder, done, path
 end
 
@@ -179,7 +192,7 @@ function PathfinderUtil.startPathfindingFromVehicleToWaypoint(vehicle, goalWaypo
     local start = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     local goal = State3D(goalWaypoint.x, -goalWaypoint.z, courseGenerator.fromCpAngle(goalWaypoint.angle))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    return PathfinderUtil.startPathfinding(start, goal, vehicle.sizeLength, vehicle.sizeWidth, vehicle.cp.turnDiameter / 2, allowReverse)
+    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle), allowReverse)
 end
 
 --- Interface function to start the pathfinder in the game. The goal is a point at sideOffset meters from the goal node
@@ -194,5 +207,5 @@ function PathfinderUtil.startPathfindingFromVehicleToNode(vehicle, goalNode, sid
     x, z, yRot = PathfinderUtil.getNodePositionAndDirection(goalNode, sideOffset)
     local goal = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    return PathfinderUtil.startPathfinding(start, goal, vehicle.sizeLength, vehicle.sizeWidth, vehicle.cp.turnDiameter / 2, allowReverse)
+    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle), allowReverse)
 end

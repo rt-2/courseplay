@@ -36,14 +36,32 @@ end
 
 function DevHelper:update()
     if not CpManager.isDeveloper then return end
-    local node, lx, lz
+    local node, lx, lz, hasCollision, vehicle
+
     if g_currentMission.controlledVehicle then
+
+        if self.vehicle ~= g_currentMission.controlledVehicle then
+            PathfinderUtil.setUpVehicleCollisionData(g_currentMission.controlledVehicle)
+        end
+
+        self.vehicle = g_currentMission.controlledVehicle
         node = g_currentMission.controlledVehicle.rootNode
         lx, _, lz = localDirectionToWorld(node, 0, 0, 1)
+        self.vehicleData = PathfinderUtil.getVehicleData(g_currentMission.controlledVehicle)
     else
         node = g_currentMission.player.cameraNode
         lx, _, lz = localDirectionToWorld(node, 0, 0, -1)
+        local dummyVehicle = {sizeLength = 5, sizeWidth = 3, lengthOffset = 0, rootNode = node, cp = {turnDiameter = 10}}
+        self.vehicleData = PathfinderUtil.getVehicleData(dummyVehicle)
     end
+
+    hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(node, self.vehicleData)
+    if hasCollision then
+        self.data.vehicleOverlap = vehicle
+    else
+        self.data.vehicleOverlap = 'none'
+    end
+
     self.yRot = math.atan2( lx, lz )
     self.data.yRotDeg = math.deg(self.yRot)
     self.data.x, self.data.y, self.data.z = getWorldTranslation(node)
@@ -54,13 +72,6 @@ function DevHelper:update()
     self.data.fieldAreaPercent = 100 * self.fieldArea / self.totalFieldArea
 
     self.data.collidingShapes = overlapBox(self.data.x, self.data.y + 1, self.data.z, 0, self.yRot, 0, 3, 3, 3, "dummy", nil, AIVehicleUtil.COLLISION_MASK, true, true, true)
-
-    local hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(node, 6, 2.5)
-    if hasCollision then
-        self.data.vehicleOverlap = vehicle
-    else
-        self.data.vehicleOverlap = 'none'
-    end
 
     if self.pathfinder and self.pathfinder:isActive() then
         local done, path = self.pathfinder:resume()
@@ -91,7 +102,7 @@ function DevHelper:startPathfinding()
     self.pathfinderStartTime = g_time
     self:debug('Starting pathfinding between %s and %s', tostring(self.start), tostring(self.goal))
     local done, path
-    self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, 6, 2.5, 5, false)
+    self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, self.vehicleData, true)
     if done then
         if path then
             self:loadPath(path)
@@ -112,6 +123,7 @@ function DevHelper:draw()
     end
     DebugUtil.renderTable(0.3, 0.3, 0.02, data, 0.05)
     self:drawCourse()
+    self:showVehicleSize()
 end
 
 ---@param path State3D[]
@@ -151,6 +163,30 @@ function DevHelper:findTrailers()
     end
 end
 
+
+function DevHelper:showVehicleSize()
+    local vehicle = g_currentMission.controlledVehicle
+    if not vehicle then return end
+    local x, z, yRot = PathfinderUtil.getNodePositionAndDirection(AIDriverUtil.getDirectionNode(vehicle))
+    local node = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
+    if not PathfinderUtil.helperNode then
+        PathfinderUtil.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
+    end
+    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
+    setTranslation(PathfinderUtil.helperNode, node.x, y, -node.y)
+    setRotation(PathfinderUtil.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
+    local vehicleData = PathfinderUtil.getVehicleData(vehicle)
+    local x1,y1,z1 = localToWorld(PathfinderUtil.helperNode, -vehicleData.dRight, 2, vehicleData.dFront);
+    local x2,y2,z2 = localToWorld(PathfinderUtil.helperNode, vehicleData.dLeft, 2, vehicleData.dFront);
+    local x3,y3,z3 = localToWorld(PathfinderUtil.helperNode, -vehicleData.dRight, 2, -vehicleData.dRear);
+    local x4,y4,z4 = localToWorld(PathfinderUtil.helperNode, vehicleData.dLeft, 2, -vehicleData.dRear);
+
+    drawDebugLine(x1,y1,z1,0,0,1,x2,y2,z2,0,0,1);
+    drawDebugLine(x1,y1,z1,0,0,1,x3,y3,z3,0,0,1);
+    drawDebugLine(x2,y2,z2,0,0,1,x4,y4,z4,0,0,1);
+    drawDebugLine(x3,y3,z3,0,0,1,x4,y4,z4,0,0,1);
+
+end
+
 -- make sure to recreate the global dev helper whenever this script is (re)loaded
 g_devHelper = DevHelper()
-DevHelper.setUpVehicleCollisionData()

@@ -93,7 +93,6 @@ function State3D:remove(openList)
     end
 end
 
-
 function State3D:isClosed()
     return self.closed
 end
@@ -107,7 +106,7 @@ end
 
 function State3D:updateG(primitive, userPenalty)
     local penalty = 1
-    local reversePenalty = 10
+    local reversePenalty = 2
     if self.pred and self.pred.motionPrimitive then
         -- penalize turning
         if HybridAStar.MotionPrimitives.isTurn(primitive, self.pred.motionPrimitive) then
