@@ -143,6 +143,12 @@ function CombineAIDriver:onEndCourse()
 end
 
 function CombineAIDriver:onWaypointPassed(ix)
+	if self.state == self.states.ON_FIELDWORK_COURSE and
+			(self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD or
+			self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD) then
+		-- nothing to do while driving to unload and back
+		return UnloadableFieldworkAIDriver.onWaypointPassed(self, ix)
+	end
 	self:checkFruit()
 	-- make sure we start making a pocket while we still have some fill capacity left as we'll be
 	-- harvesting fruit while making the pocket
@@ -175,6 +181,7 @@ function CombineAIDriver:changeToFieldworkUnloadOrRefill()
 		self:checkFruit()
 		-- TODO: check around turn maneuvers we may not want to pull back before a turn
 		if self.vehicle.cp.settings.selfUnload:is(true) and self:startSelfUnload() then
+			self:debug('Raising implements')
 			self:raiseImplements()
 			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
 			self.fieldWorkUnloadOrRefillState = self.states.DRIVING_TO_SELF_UNLOAD
@@ -286,8 +293,11 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 		self:setSpeed(0)
 		if self:unloadFinished() then
 			self:debug('Self unloading finished, returning to fieldwork')
-			self:returnToFieldworkAfterSelfUnloading()
-		 	self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
+			if self:returnToFieldworkAfterSelfUnloading() then
+				self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
+			else
+				self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
+			end
 		end
 	elseif self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD then
 		self:setSpeed(self.vehicle.cp.speeds.field)
@@ -914,13 +924,18 @@ function CombineAIDriver:returnToFieldworkAfterSelfUnloading()
 		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToWaypoint(
 				self.vehicle, self.fieldworkCourse:getWaypoint(self.waypointIxAfterPathfinding), true)
 		if done then
-			return self:onPathfindingDone(path)
+			if path then
+				return self:onPathfindingDone(path)
+			else
+				return false
+			end
+		else
+			return true
 		end
 	else
 		self:debug('Pathfinder already active')
 	end
 	return true
-
 end
 
 function CombineAIDriver:onPathfindingDone(path)

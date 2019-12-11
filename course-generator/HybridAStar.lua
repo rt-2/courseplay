@@ -245,6 +245,11 @@ function HybridAStar.VehicleData:init(name, turnRadius, dFront, dRear, dLeft, dR
 	self.dRight = dRight
 end
 
+---Environment data
+---@class HybridAStar.EnvironmentData
+HybridAStar.EnvironmentData = CpObject()
+
+
 function HybridAStar:init()
 	self.count = 0
 	self.yields = 0
@@ -264,7 +269,7 @@ function HybridAStar.getNodePenalty(node)
 	return 0
 end
 
-function HybridAStar.isValidNode(node)
+function HybridAStar.isValidNode(node, vehicleData, fieldData)
 	return true
 end
 
@@ -548,14 +553,17 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 	return false
 end
 
+--- Figure out which waypoints should have the reverse attribute in order to make it drivable by the PPC
 function HybridAStarWithAStarInTheMiddle:fixReverseForCourseplay(path)
-    print(tostring(path))
-	-- fix both ends first:
     path:calculateData()
-	path[1].reverse = path[2].reverse
---	path[#path].reverse = path[#path - 1].reverse
-	-- the result of the hybrid A star changes direction one waypoint too early.
-    local currentReverse = path[1].reverse
+    -- we rely here on the fact that the start waypoint will be aligned with the vehicle either forward or backward
+    -- (about 0 or 180 degrees)
+    local angleBetweenStartAndFirstWp = getDeltaAngle(path[1].nextEdge.angle, self.startNode.t)
+    self:debug('Angle between start and first wp is %.1f', math.deg(angleBetweenStartAndFirstWp))
+    -- if pointing back, start in reverse
+    local currentReverse = math.abs(angleBetweenStartAndFirstWp) > math.pi / 2
+    path[1].reverse = currentReverse
+    -- and then keep changing direction when the waypoint direction changes a lot
 	for i = 2, #path do
         path[i].reverse = currentReverse
 		if math.abs(getDeltaAngle(path[i].prevEdge.angle, path[i].nextEdge.angle)) > math.pi / 2 then

@@ -151,15 +151,15 @@ function PathfinderUtil.isValidNode(node, vehicleData)
 end
 
 ---@return HybridAStar.VehicleData
-function PathfinderUtil.getVehicleData(vehicle)
+function PathfinderUtil.getVehicleData(vehicle, buffer)
     local _, _, rootToDirectionNodeDistance = localToLocal(AIDriverUtil.getDirectionNode(vehicle), vehicle.rootNode, 0, 0, 0)
     local turnRadius = vehicle.cp and vehicle.cp.turnDiameter and vehicle.cp.turnDiameter / 2 or 10
     local name = vehicle.getName and vehicle:getName() or 'N/A'
     return HybridAStar.VehicleData(
             name,
             turnRadius,
-            vehicle.sizeLength / 2 + vehicle.lengthOffset - rootToDirectionNodeDistance,
-            vehicle.sizeLength / 2 - vehicle.lengthOffset + rootToDirectionNodeDistance,
+            vehicle.sizeLength / 2 + vehicle.lengthOffset - rootToDirectionNodeDistance + (buffer or 0),
+            vehicle.sizeLength / 2 - vehicle.lengthOffset + rootToDirectionNodeDistance + (buffer or 0),
             vehicle.sizeWidth / 2,
             vehicle.sizeWidth / 2
     )
@@ -190,9 +190,9 @@ end
 function PathfinderUtil.startPathfindingFromVehicleToWaypoint(vehicle, goalWaypoint, allowReverse)
     local x, z, yRot = PathfinderUtil.getNodePositionAndDirection(AIDriverUtil.getDirectionNode(vehicle))
     local start = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
-    local goal = State3D(goalWaypoint.x, -goalWaypoint.z, courseGenerator.fromCpAngle(goalWaypoint.angle))
+    local goal = State3D(goalWaypoint.x, -goalWaypoint.z, math.rad(courseGenerator.fromCpAngleDeg(goalWaypoint.angle)))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle), allowReverse)
+    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle, 1), allowReverse)
 end
 
 --- Interface function to start the pathfinder in the game. The goal is a point at sideOffset meters from the goal node
@@ -207,5 +207,5 @@ function PathfinderUtil.startPathfindingFromVehicleToNode(vehicle, goalNode, sid
     x, z, yRot = PathfinderUtil.getNodePositionAndDirection(goalNode, sideOffset)
     local goal = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle), allowReverse)
+    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle, 1), allowReverse)
 end

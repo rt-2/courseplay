@@ -55,7 +55,7 @@ function DevHelper:update()
         self.vehicleData = PathfinderUtil.getVehicleData(dummyVehicle)
     end
 
-    hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(node, self.vehicleData)
+    --hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(node, self.vehicleData)
     if hasCollision then
         self.data.vehicleOverlap = vehicle
     else
