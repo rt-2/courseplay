@@ -51,11 +51,11 @@ function DevHelper:update()
     else
         node = g_currentMission.player.cameraNode
         lx, _, lz = localDirectionToWorld(node, 0, 0, -1)
-        local dummyVehicle = {sizeLength = 5, sizeWidth = 3, lengthOffset = 0, rootNode = node, cp = {turnDiameter = 10}}
-        self.vehicleData = PathfinderUtil.getVehicleData(dummyVehicle)
+        self.vehicle = {sizeLength = 5, sizeWidth = 3, lengthOffset = 0, rootNode = node, cp = {turnDiameter = 10}}
+        self.vehicleData = PathfinderUtil.getVehicleData(self.vehicle)
     end
-
-    --hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(node, self.vehicleData)
+    local myCollisionData = PathfinderUtil.getCollisionData(node, self.vehicleData, 'me')
+    hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(myCollisionData)
     if hasCollision then
         self.data.vehicleOverlap = vehicle
     else
@@ -102,7 +102,8 @@ function DevHelper:startPathfinding()
     self.pathfinderStartTime = g_time
     self:debug('Starting pathfinding between %s and %s', tostring(self.start), tostring(self.goal))
     local done, path
-    self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, self.vehicleData, true)
+    local context = PathfinderUtil.Context(self.vehicleData, PathfinderUtil.FieldData(self.data.fieldNum))
+    self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, context, self.vehicleData, true)
     if done then
         if path then
             self:loadPath(path)

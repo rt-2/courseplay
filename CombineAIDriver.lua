@@ -905,7 +905,7 @@ function CombineAIDriver:startSelfUnload()
 		self.courseAfterPathfinding = nil
 		self.waypointIxAfterPathfinding = nil
 		local done, path
-		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset, true)
+		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset - 0.5, true)
 		if done then
 			return self:onPathfindingDone(path)
 		end

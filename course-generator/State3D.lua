@@ -150,9 +150,13 @@ function State3D:getCost()
     return self.cost
 end
 
+function State3D:getReverseHeading()
+    return self:normalizeHeadingRad(self.t + math.pi)
+end
+
 --- Make a 180 turn
 function State3D:reverseHeading()
-    self.t = self:normalizeHeadingRad(self.t + math.pi)
+    self.t = self:getReverseHeading()
 end
 
 function State3D:normalizeHeadingRad(t)

@@ -18,6 +18,53 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 PathfinderUtil = {}
 
+---Size/turn radius all other information on the vehicle
+---@class PathfinderUtil.VehicleData
+PathfinderUtil.VehicleData = CpObject()
+
+---@param name string name of the vehicle
+---@param turnRadius number turning radius of the vehicle
+---@param dFront number distance of the vehicle's front from the node
+---@param dRear number distance of the vehicle's rear from the node
+---@param dLeft number distance of the vehicle's left side from the node
+---@param dRight number distance of the vehicle's right side from the node
+function PathfinderUtil.VehicleData:init(name, turnRadius, dFront, dRear, dLeft, dRight)
+    self.name = name
+    self.turnRadius = turnRadius
+    self.dFront = dFront
+    self.dRear = dRear
+    self.dLeft = dLeft
+    self.dRight = dRight
+end
+
+--- Field info for pathfinding
+---@class PathfinderUtil.FieldData
+PathfinderUtil.FieldData = CpObject()
+
+function PathfinderUtil.FieldData:init(fieldNum)
+    self.minX, self.maxX, self.minZ, self.maxZ = math.huge, -math.huge, math.huge, -math.huge
+    if courseplay.fields.fieldData[fieldNum] then
+        for _, point in ipairs(courseplay.fields.fieldData[fieldNum].points) do
+            if ( point.cx < self.minX ) then self.minX = point.cx end
+            if ( point.cz < self.minZ ) then self.minZ = point.cz end
+            if ( point.cx > self.maxX ) then self.maxX = point.cx end
+            if ( point.cz > self.maxZ ) then self.maxZ = point.cz end
+        end
+    end
+    self.maxY = -self.minZ + 20
+    self.minY = -self.maxZ - 20
+    self.maxX = self.maxX + 20
+    self.minX = self.minX - 20
+end
+
+--- Pathfinder context
+---@class PathfinderUtil.Context
+PathfinderUtil.Context = CpObject()
+function PathfinderUtil.Context:init(vehicleData, fieldData)
+    self.vehicleData = vehicleData
+    self.fieldData = fieldData
+end
+
 --- Calculate the four corners of a rectangle around a node (for example the area covered by a vehicle)
 function PathfinderUtil.getCollisionData(node, vehicleData)
     local x, y, z
@@ -33,15 +80,20 @@ function PathfinderUtil.getCollisionData(node, vehicleData)
     return {name = vehicleData.name, corners = corners}
 end
 
-function PathfinderUtil.findCollidingVehicles(myNode, vehicleData)
+function PathfinderUtil.findCollidingVehicles(myCollisionData)
     if not PathfinderUtil.vehicleCollisionData then return false end
-    local myCollisionData = PathfinderUtil.getCollisionData(myNode, vehicleData, 'me')
     for _, collisionData in pairs(PathfinderUtil.vehicleCollisionData) do
         if PathfinderUtil.doRectanglesOverlap(myCollisionData.corners, collisionData.corners) then
             return true, collisionData.name
         end
     end
     return false
+end
+
+function PathfinderUtil.findCollidingShapes(node, myCollisionData, vehicleData)
+    local rearLeftCorner = myCollisionData.corners[4]
+    local collidingShapes = overlapBox(rearLeftCorner.x, rearLeftCorner.y + 1, rearLeftCorner.z, 0, self.yRot, 0, 3, 3, 3, "dummy", nil, AIVehicleUtil.COLLISION_MASK, true, true, true)
+
 end
 
 --- Find all other vehicles and add them to our list of vehicles to avoid. Must be called before each pathfinding to 
@@ -125,7 +177,7 @@ function PathfinderUtil.getNodePenalty(node)
     local penalty = 0
     local isField, area, totalArea = courseplay:isField(node.x, -node.y, areaSize, areaSize)
     if area / totalArea < minRequiredAreaRatio then
-        penalty = penalty + 100
+        penalty = penalty + 5
     end
     if isField then
         local hasFruit
@@ -139,15 +191,21 @@ end
 
 --- Check if node is valid: would we collide with another vehicle here?
 ---@param node State3D
----@param vehicleData HybridAStar.VehicleData
-function PathfinderUtil.isValidNode(node, vehicleData)
+---@param userData PathfinderUtil.Context
+function PathfinderUtil.isValidNode(node, context)
+    if node.x < context.fieldData.minX or node.x > context.fieldData.maxX or node.y < context.fieldData.minY or node.y > context.fieldData.maxY then
+        return false
+    end
     if not PathfinderUtil.helperNode then
         PathfinderUtil.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
     end
     local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
     setTranslation(PathfinderUtil.helperNode, node.x, y, -node.y)
-    setRotation(PathfinderUtil.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
-    return not PathfinderUtil.findCollidingVehicles(PathfinderUtil.helperNode, vehicleData)
+    local heading = context.reverseHeading and courseGenerator.toCpAngle(node:getReverseHeading()) or courseGenerator.toCpAngle(node.t)
+    setRotation(PathfinderUtil.helperNode, 0, heading, 0)
+    local myCollisionData = PathfinderUtil.getCollisionData(PathfinderUtil.helperNode, context.vehicleData, 'me')
+
+    return not PathfinderUtil.findCollidingVehicles(myCollisionData)
 end
 
 ---@return HybridAStar.VehicleData
@@ -155,7 +213,7 @@ function PathfinderUtil.getVehicleData(vehicle, buffer)
     local _, _, rootToDirectionNodeDistance = localToLocal(AIDriverUtil.getDirectionNode(vehicle), vehicle.rootNode, 0, 0, 0)
     local turnRadius = vehicle.cp and vehicle.cp.turnDiameter and vehicle.cp.turnDiameter / 2 or 10
     local name = vehicle.getName and vehicle:getName() or 'N/A'
-    return HybridAStar.VehicleData(
+    return PathfinderUtil.VehicleData(
             name,
             turnRadius,
             vehicle.sizeLength / 2 + vehicle.lengthOffset - rootToDirectionNodeDistance + (buffer or 0),
@@ -168,11 +226,11 @@ end
 --- Interface function to start the pathfinder
 ---@param start State3D start node
 ---@param goal State3D goal node
----@param vehicleData HybridAStar.VehicleData
+---@param context PathfinderUtil.Context
 ---@param allowReverse boolean allow reverse driving
-function PathfinderUtil.startPathfinding(start, goal, vehicleData, allowReverse)
+function PathfinderUtil.startPathfinding(start, goal, context, allowReverse)
     local pathfinder = HybridAStarWithAStarInTheMiddle(20)
-    local done, path = pathfinder:start(start, goal, vehicleData, allowReverse, PathfinderUtil.getNodePenalty, PathfinderUtil.isValidNode)
+    local done, path = pathfinder:start(start, goal, context.vehicleData.turnRadius, context, allowReverse, PathfinderUtil.getNodePenalty, PathfinderUtil.isValidNode)
     return pathfinder, done, path
 end
 
@@ -190,9 +248,11 @@ end
 function PathfinderUtil.startPathfindingFromVehicleToWaypoint(vehicle, goalWaypoint, allowReverse)
     local x, z, yRot = PathfinderUtil.getNodePositionAndDirection(AIDriverUtil.getDirectionNode(vehicle))
     local start = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
-    local goal = State3D(goalWaypoint.x, -goalWaypoint.z, math.rad(courseGenerator.fromCpAngleDeg(goalWaypoint.angle)))
+    local goal = State3D(goalWaypoint.x, -goalWaypoint.z, courseGenerator.fromCpAngleDeg(goalWaypoint.angle))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle, 1), allowReverse)
+    local fieldNum = courseplay.fields:onWhichFieldAmI(vehicle)
+    local context = PathfinderUtil.Context(PathfinderUtil.getVehicleData(vehicle, 1), PathfinderUtil.FieldData(fieldNum))
+    return PathfinderUtil.startPathfinding(start, goal, context, allowReverse)
 end
 
 --- Interface function to start the pathfinder in the game. The goal is a point at sideOffset meters from the goal node
@@ -207,5 +267,7 @@ function PathfinderUtil.startPathfindingFromVehicleToNode(vehicle, goalNode, sid
     x, z, yRot = PathfinderUtil.getNodePositionAndDirection(goalNode, sideOffset)
     local goal = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    return PathfinderUtil.startPathfinding(start, goal, PathfinderUtil.getVehicleData(vehicle, 1), allowReverse)
+    local fieldNum = courseplay.fields:onWhichFieldAmI(vehicle)
+    local context = PathfinderUtil.Context(PathfinderUtil.getVehicleData(vehicle, 1), PathfinderUtil.FieldData(fieldNum))
+    return PathfinderUtil.startPathfinding(start, goal, context, allowReverse)
 end
