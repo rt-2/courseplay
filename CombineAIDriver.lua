@@ -185,6 +185,7 @@ function CombineAIDriver:changeToFieldworkUnloadOrRefill()
 			self:raiseImplements()
 			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
 			self.fieldWorkUnloadOrRefillState = self.states.DRIVING_TO_SELF_UNLOAD
+			self.ppc:setShortLookaheadDistance()
 			self:rememberWaypointToContinueFieldwork()
 		elseif self:shouldMakePocket() then
 			-- I'm on the edge of the field or fruit is on both sides, make a pocket on the right side and wait there for the unload
@@ -298,6 +299,7 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 			else
 				self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
 			end
+			self.ppc:setNormalLookaheadDistance()
 		end
 	elseif self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD then
 		self:setSpeed(self.vehicle.cp.speeds.field)
