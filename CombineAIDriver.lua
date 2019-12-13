@@ -297,7 +297,7 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 			if self:returnToFieldworkAfterSelfUnloading() then
 				self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
 			else
-				self.fieldWorkUnloadOrRefillState = self.states.RETURNING_FROM_SELF_UNLOAD
+				self:startFieldworkWithPathfinding(self.aiDriverData.continueFieldworkAtWaypoint)
 			end
 			self.ppc:setNormalLookaheadDistance()
 		end

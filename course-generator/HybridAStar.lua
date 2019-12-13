@@ -263,6 +263,7 @@ end
 ---@param userData table anything you want to pass on to the isValidNodeFunc
 ---@param allowReverse boolean allow reverse driving
 ---@param getNodePenaltyFunc function get penalty for a node, see getNodePenalty()
+---@param isValidNodeFunc function function to check if a node should even be considered
 function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, getNodePenaltyFunc, isValidNodeFunc)
 	self:debug('Start pathfinding between %s and %s', tostring(start), tostring(goal))
 	if not getNodePenaltyFunc then getNodePenaltyFunc = self.getNodePenalty end
@@ -446,6 +447,8 @@ function HybridAStarWithAStarInTheMiddle:start(start, goal, turnRadius, userData
 		-- at the goal. Here we want to end up exactly on the goal point
 		self.startNode:reverseHeading()
 		self.goalNode:reverseHeading()
+        -- TODO: solve this somehow cleaner, we have to pass on to the isValidNodeFunc the fact that we are searching
+        -- backwards so in case of collision check the vehicle must be turned 180
 		self.userData.reverseHeading = true
 		return self:resume(self.goalNode, self.startNode, turnRadius, self.userData, self.allowReverse, getNodePenaltyFunc, isValidNodeFunc)
 	else
