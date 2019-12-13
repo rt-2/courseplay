@@ -90,10 +90,14 @@ function PathfinderUtil.findCollidingVehicles(myCollisionData)
     return false
 end
 
-function PathfinderUtil.findCollidingShapes(node, myCollisionData, vehicleData)
+function PathfinderUtil.findCollidingShapes(myCollisionData, yRot, vehicleData)
     local rearLeftCorner = myCollisionData.corners[4]
-    local collidingShapes = overlapBox(rearLeftCorner.x, rearLeftCorner.y + 1, rearLeftCorner.z, 0, self.yRot, 0, 3, 3, 3, "dummy", nil, AIVehicleUtil.COLLISION_MASK, true, true, true)
-
+    local collidingShapes = overlapBox(
+            rearLeftCorner.x, rearLeftCorner.y + 1, rearLeftCorner.z,
+            0, yRot, 0,
+            vehicleData.dRight + vehicleData.dLeft, 1, vehicleData.dFront + vehicleData.dRear,
+            "dummy", nil, AIVehicleUtil.COLLISION_MASK, true, true, true)
+    return 0
 end
 
 --- Find all other vehicles and add them to our list of vehicles to avoid. Must be called before each pathfinding to 
@@ -204,8 +208,9 @@ function PathfinderUtil.isValidNode(node, context)
     local heading = context.reverseHeading and courseGenerator.toCpAngle(node:getReverseHeading()) or courseGenerator.toCpAngle(node.t)
     setRotation(PathfinderUtil.helperNode, 0, heading, 0)
     local myCollisionData = PathfinderUtil.getCollisionData(PathfinderUtil.helperNode, context.vehicleData, 'me')
-
-    return not PathfinderUtil.findCollidingVehicles(myCollisionData)
+    local _, _, yRot = PathfinderUtil.getNodePositionAndDirection(PathfinderUtil.helperNode)
+    local collidingShapes = PathfinderUtil.findCollidingShapes(myCollisionData, yRot, context.vehicleData)
+    return (not PathfinderUtil.findCollidingVehicles(myCollisionData) and collidingShapes == 0)
 end
 
 ---@return HybridAStar.VehicleData

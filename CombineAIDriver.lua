@@ -693,19 +693,6 @@ function CombineAIDriver:createOuterHeadlandCornerCourse(turnContext)
 	return Course(self.vehicle, cornerWaypoints, true), turnContext.turnEndWpIx
 end
 
-function CombineAIDriver:onBlocked()
-	self:debug('Combine blocked, trying to switch to next waypoint...')
-	local nextWpIx = self.ppc:getCurrentWaypointIx() + 1
-	if nextWpIx > self.course:getNumberOfWaypoints() then
-		self:debug('Combine blocked, already at last waypoint, ending course.')
-		self:onLastWaypoint()
-	else
-		self:debug('Combine blocked, trying to switch to next (%d) waypoint', nextWpIx)
-		self.ppc:initialize(nextWpIx)
-	end
-end
-
-
 function CombineAIDriver:isChopper()
 	return self.combine:getFillUnitCapacity(self.combine.fillUnitIndex) > 10000000
 end

@@ -278,7 +278,6 @@ function KTurn:onBlocked()
 	end
 end
 
-
 --[[
   Headland turn for combines:
   1. drive forward to the field edge or the headland path edge
@@ -351,8 +350,34 @@ function CombineHeadlandTurn:turn(dt)
 			self.driver:lowerImplements()
 			self.driver:resumeFieldworkAfterTurn(self.turnContext.turnEndWpIx)
 		end
+	elseif self.state == self.states.REVERSING_AFTER_BLOCKED then
+		self:setReverseSpeed()
+		self.driver:driveVehicleBySteeringAngle(dt, false, 0.6, self.turnContext:isLeftTurn(), self.driver:getSpeed())
+		if self.vehicle.timer > self.blockedTimer + 3500 then
+			self.state = self.stateAfterBlocked
+			self:debug('Trying again after reversed due to being blocked')
+		end
+	elseif self.state == self.states.FORWARDING_AFTER_BLOCKED then
+		self:setForwardSpeed()
+		self.driver:driveVehicleBySteeringAngle(dt, true, 0.6, self.turnContext:isLeftTurn(), self.driver:getSpeed())
+		if self.vehicle.timer > self.blockedTimer + 3500 then
+			self.state = self.stateAfterBlocked
+			self:debug('Trying again after forwarded due to being blocked')
+		end
 	end
 	return true
+end
+
+function CombineHeadlandTurn:onBlocked()
+	self.stateAfterBlocked = self.state
+	self.blockedTimer = self.vehicle.timer
+	if self.state == self.states.REVERSE_ARC or self.state == self.states.REVERSE_STRAIGHT then
+		self.state = self.states.FORWARDING_AFTER_BLOCKED
+		self:debug('Blocked, try forwarding a bit')
+	else
+		self.state = self.states.REVERSING_AFTER_BLOCKED
+		self:debug('Blocked, try reversing a bit')
+	end
 end
 
 --[[
