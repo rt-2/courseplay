@@ -66,8 +66,8 @@ function DevHelper:update()
     self.data.yRotDeg = math.deg(self.yRot)
     self.data.x, self.data.y, self.data.z = getWorldTranslation(node)
     self.data.fieldNum = courseplay.fields:getFieldNumForPosition(self.data.x, self.data.z)
-    self.data.hasFruit, _, self.fruitArea, self.totalFruitArea = courseplay:areaHasFruit( self.data.x, self.data.z, nil, 2, 2)
-    self.data.fruitAreaPercent = 100 * self.fruitArea / self.totalFruitArea
+
+    self.data.hasFruit, self.data.fruitValue, self.data.fruit = PathfinderUtil.hasFruit(self.data.x, self.data.z, 2, 2)
     self.data.isField, self.fieldArea, self.totalFieldArea = courseplay:isField(self.data.x, self.data.z, 2, 2)
     self.data.fieldAreaPercent = 100 * self.fieldArea / self.totalFieldArea
 

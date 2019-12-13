@@ -97,7 +97,27 @@ function PathfinderUtil.findCollidingShapes(myCollisionData, yRot, vehicleData)
             0, yRot, 0,
             vehicleData.dRight + vehicleData.dLeft, 1, vehicleData.dFront + vehicleData.dRear,
             "dummy", nil, AIVehicleUtil.COLLISION_MASK, true, true, true)
-    return 0
+    return collidingShapes
+end
+
+function PathfinderUtil.hasFruit(x, z, length, width)
+    local fruitsToIgnore = {13, 14} -- GRASS, DRYGRASS
+    for _, fruitType in ipairs(g_fruitTypeManager.fruitTypes) do
+        local ignoreThis = false
+        for _, fruitToIgnore in ipairs(fruitsToIgnore) do
+            if fruitType.index == fruitToIgnore then
+                ignoreThis = true
+                break
+            end
+        end
+        if not ignoreThis then
+            local fruitValue, _, _, _ = FSDensityMapUtil.getFruitArea(fruitType.index, x - width / 2, z - length / 2, x + width / 2, z, x, z + length / 2, nil, false)
+            if fruitValue > 0 then
+                return true, fruitValue, g_fruitTypeManager:getFruitTypeByIndex(fruitType.index).name
+            end
+        end
+    end
+    return false
 end
 
 --- Find all other vehicles and add them to our list of vehicles to avoid. Must be called before each pathfinding to 
@@ -184,11 +204,8 @@ function PathfinderUtil.getNodePenalty(node)
         penalty = penalty + 5
     end
     if isField then
-        local hasFruit
-        hasFruit, _, area, totalArea = courseplay:areaHasFruit(node.x, -node.y, nil, areaSize, areaSize)
-        if hasFruit and area / totalArea > 1 - minRequiredAreaRatio then
-            penalty = penalty + 50
-        end
+        local hasFruit, fruitValue = PathfinderUtil.hasFruit(node.x, -node.y, areaSize, areaSize)
+        penalty = penalty + (hasFruit and (10 + fruitValue / 2) or 0)
     end
     return penalty
 end
@@ -213,7 +230,7 @@ function PathfinderUtil.isValidNode(node, context)
     return (not PathfinderUtil.findCollidingVehicles(myCollisionData) and collidingShapes == 0)
 end
 
----@return HybridAStar.VehicleData
+---@return PathfinderUtil.VehicleData
 function PathfinderUtil.getVehicleData(vehicle, buffer)
     local _, _, rootToDirectionNodeDistance = localToLocal(AIDriverUtil.getDirectionNode(vehicle), vehicle.rootNode, 0, 0, 0)
     local turnRadius = vehicle.cp and vehicle.cp.turnDiameter and vehicle.cp.turnDiameter / 2 or 10
@@ -247,7 +264,7 @@ function PathfinderUtil.getNodePositionAndDirection(node, sideOffset)
 end
 
 --- Interface function to start the pathfinder in the game
----@param vehicle  vehicle, will be used as the start location/heading, turn radius and size
+---@param vehicle table, will be used as the start location/heading, turn radius and size
 ---@param goalWaypoint Waypoint The destination waypoint (x, z, angle)
 ---@param allowReverse boolean allow reverse driving
 function PathfinderUtil.startPathfindingFromVehicleToWaypoint(vehicle, goalWaypoint, allowReverse)
@@ -262,8 +279,8 @@ end
 
 --- Interface function to start the pathfinder in the game. The goal is a point at sideOffset meters from the goal node
 --- (sideOffset > 0 is left)
----@param vehicle  vehicle, will be used as the start location/heading, turn radius and size
----@param goalNode node The goal node
+---@param vehicle table, will be used as the start location/heading, turn radius and size
+---@param goalNode table The goal node
 ---@param sideOffset number side offset of the goal from the goal node
 ---@param allowReverse boolean allow reverse driving
 function PathfinderUtil.startPathfindingFromVehicleToNode(vehicle, goalNode, sideOffset, allowReverse)
