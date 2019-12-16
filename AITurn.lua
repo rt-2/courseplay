@@ -272,7 +272,7 @@ function KTurn:onBlocked()
 	if self.state == self.states.REVERSE then
 		self.state = self.states.FORWARDING_AFTER_BLOCKED
 		self:debug('Blocked, try forwarding a bit')
-	else
+	elseif self.state == self.states.FORWARD then
 		self.state = self.states.REVERSING_AFTER_BLOCKED
 		self:debug('Blocked, try reversing a bit')
 	end

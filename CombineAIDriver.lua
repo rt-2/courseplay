@@ -81,17 +81,22 @@ function CombineAIDriver:init(vehicle)
 		self:debug('Pipe on left side %s', tostring(self.pipeOnLeftSide))
 		-- check the pipe length:
 		-- unfold everything, open the pipe, check the side offset, then close pipe, fold everything back (if it was folded)
-		local wasFolded
+		local wasFolded, wasClosed
 		if self.vehicle.spec_foldable then
 			wasFolded = not self.vehicle.spec_foldable:getIsUnfolded()
 			if wasFolded then
 				Foldable.setAnimTime(self.vehicle.spec_foldable, 1, true)
 			end
 		end
-		self.pipe:setAnimationTime(self.pipe.animation.name, 1, true)
+		if self.pipe.currentState == CombineAIDriver.PIPE_STATE_CLOSED then
+			wasClosed = true
+			self.pipe:setAnimationTime(self.pipe.animation.name, 1, true)
+		end
 		self.pipeOffset, _, _ = localToLocal(dischargeNode.node, self.vehicle.rootNode, 0, 0, 0)
 		self:debug('Pipe offset: %.1f', self.pipeOffset)
-		self.pipe:setAnimationTime(self.pipe.animation.name, 0, true)
+		if wasClosed then
+			self.pipe:setAnimationTime(self.pipe.animation.name, 0, true)
+		end
 		if self.vehicle.spec_foldable then
 			if wasFolded then
 				Foldable.setAnimTime(self.vehicle.spec_foldable, 0, true)
@@ -893,8 +898,10 @@ function CombineAIDriver:startSelfUnload()
 		self.pathFindingStartedAt = self.vehicle.timer
 		self.courseAfterPathfinding = nil
 		self.waypointIxAfterPathfinding = nil
+		local fieldNum = courseplay.fields:onWhichFieldAmI(self.vehicle)
 		local done, path
-		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(self.vehicle, bestTrailer.rootNode, -self.pipeOffset - 0.5, true)
+		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(
+				self.vehicle, bestTrailer.rootNode, -self.pipeOffset - 0.5, true, fieldNum)
 		if done then
 			return self:onPathfindingDone(path)
 		end
@@ -911,15 +918,9 @@ function CombineAIDriver:returnToFieldworkAfterSelfUnloading()
 		self.waypointIxAfterPathfinding = self.aiDriverData.continueFieldworkAtWaypoint
 		local done, path
 		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToWaypoint(
-				self.vehicle, self.fieldworkCourse:getWaypoint(self.waypointIxAfterPathfinding), true)
+				self.vehicle, self.fieldworkCourse:getWaypoint(self.waypointIxAfterPathfinding), true, nil)
 		if done then
-			if path then
-				return self:onPathfindingDone(path)
-			else
-				return false
-			end
-		else
-			return true
+			return self:onPathfindingDone(path)
 		end
 	else
 		self:debug('Pathfinder already active')
@@ -937,7 +938,11 @@ function CombineAIDriver:onPathfindingDone(path)
 		return true
 	else
 		self:debug('No path found in %d ms, no self unloading', self.vehicle.timer - (self.pathFindingStartedAt or 0))
-		self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_OR_REFILL
+		if self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD then
+			self:startFieldworkWithPathfinding(self.aiDriverData.continueFieldworkAtWaypoint)
+		elseif self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
+			self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_OR_REFILL
+		end
 		return false
 	end
 end

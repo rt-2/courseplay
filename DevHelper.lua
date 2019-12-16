@@ -47,19 +47,20 @@ function DevHelper:update()
         self.vehicle = g_currentMission.controlledVehicle
         node = g_currentMission.controlledVehicle.rootNode
         lx, _, lz = localDirectionToWorld(node, 0, 0, 1)
-        self.vehicleData = PathfinderUtil.getVehicleData(g_currentMission.controlledVehicle)
+        self.vehicleData = PathfinderUtil.VehicleData(g_currentMission.controlledVehicle, false)
     else
         node = g_currentMission.player.cameraNode
         lx, _, lz = localDirectionToWorld(node, 0, 0, -1)
-        self.vehicle = {sizeLength = 5, sizeWidth = 3, lengthOffset = 0, rootNode = node, cp = {turnDiameter = 10}}
-        self.vehicleData = PathfinderUtil.getVehicleData(self.vehicle)
     end
-    local myCollisionData = PathfinderUtil.getCollisionData(node, self.vehicleData, 'me')
-    hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(myCollisionData)
-    if hasCollision then
-        self.data.vehicleOverlap = vehicle
-    else
-        self.data.vehicleOverlap = 'none'
+
+    if self.vehicleData then
+        local myCollisionData = PathfinderUtil.getCollisionData(node, self.vehicleData, 'me')
+        hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(myCollisionData)
+        if hasCollision then
+            self.data.vehicleOverlap = vehicle
+        else
+            self.data.vehicleOverlap = 'none'
+        end
     end
 
     self.yRot = math.atan2( lx, lz )
@@ -80,20 +81,31 @@ function DevHelper:update()
         end
     end
 
+    if self.context then
+        if self.data.x < self.context.fieldData.minX or self.data.x > self.context.fieldData.maxX or -self.data.z < self.context.fieldData.minY or -self.data.z > self.context.fieldData.maxY then
+            self.data.minX = self.context.fieldData.minX
+            self.data.minY = self.context.fieldData.minY
+            self.data.validNode = 'off field'
+        else
+            self.data.validNode = 'on field'
+        end
+    end
+
 end
 
 function DevHelper:keyEvent(unicode, sym, modifier, isDown)
     if not CpManager.isDeveloper then return end
     if bitAND(modifier, Input.MOD_LALT) ~= 0 and isDown and sym == Input.KEY_comma then
-        self:debug('Start %.1f %.1f %.1f', self.yRot, self.data.yRotDeg, courseGenerator.fromCpAngleDeg(self.data.yRotDeg))
+        self.context = PathfinderUtil.Context(self.vehicleData, PathfinderUtil.FieldData(self.data.fieldNum))
         self.start = State3D(self.data.x, -self.data.z, courseGenerator.fromCpAngleDeg(self.data.yRotDeg))
+        self:debug('Start %s', tostring(self.start))
         self:findTrailers()
     elseif bitAND(modifier, Input.MOD_LALT) ~= 0 and isDown and sym == Input.KEY_period then
-        self:debug('Goal')
         self.goal = State3D(self.data.x, -self.data.z, courseGenerator.fromCpAngleDeg(self.data.yRotDeg))
-        self:startPathfinding()
+        self:debug('Goal %s', tostring(self.goal))
+        --self:startPathfinding()
     elseif bitAND(modifier, Input.MOD_LCTRL) ~= 0 and isDown and sym == Input.KEY_period then
-        self:debug('Recalculate')
+        self:debug('Calculate')
         self:startPathfinding()
     end
 end
@@ -102,8 +114,7 @@ function DevHelper:startPathfinding()
     self.pathfinderStartTime = g_time
     self:debug('Starting pathfinding between %s and %s', tostring(self.start), tostring(self.goal))
     local done, path
-    local context = PathfinderUtil.Context(self.vehicleData, PathfinderUtil.FieldData(self.data.fieldNum))
-    self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, context, self.vehicleData, true)
+    self.pathfinder, done, path = PathfinderUtil.startPathfinding(self.start, self.goal, self.context, true)
     if done then
         if path then
             self:loadPath(path)
@@ -164,7 +175,6 @@ function DevHelper:findTrailers()
     end
 end
 
-
 function DevHelper:showVehicleSize()
     local vehicle = g_currentMission.controlledVehicle
     if not vehicle then return end
@@ -176,17 +186,18 @@ function DevHelper:showVehicleSize()
     local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
     setTranslation(PathfinderUtil.helperNode, node.x, y, -node.y)
     setRotation(PathfinderUtil.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
-    local vehicleData = PathfinderUtil.getVehicleData(vehicle)
-    local x1,y1,z1 = localToWorld(PathfinderUtil.helperNode, -vehicleData.dRight, 2, vehicleData.dFront);
-    local x2,y2,z2 = localToWorld(PathfinderUtil.helperNode, vehicleData.dLeft, 2, vehicleData.dFront);
-    local x3,y3,z3 = localToWorld(PathfinderUtil.helperNode, -vehicleData.dRight, 2, -vehicleData.dRear);
-    local x4,y4,z4 = localToWorld(PathfinderUtil.helperNode, vehicleData.dLeft, 2, -vehicleData.dRear);
+   
+    if self.vehicleData then
+        local x1,y1,z1 = localToWorld(PathfinderUtil.helperNode, -self.vehicleData.dRight, 2, self.vehicleData.dFront);
+        local x2,y2,z2 = localToWorld(PathfinderUtil.helperNode, self.vehicleData.dLeft, 2, self.vehicleData.dFront);
+        local x3,y3,z3 = localToWorld(PathfinderUtil.helperNode, -self.vehicleData.dRight, 2, -self.vehicleData.dRear);
+        local x4,y4,z4 = localToWorld(PathfinderUtil.helperNode, self.vehicleData.dLeft, 2, -self.vehicleData.dRear);
 
-    drawDebugLine(x1,y1,z1,0,0,1,x2,y2,z2,0,0,1);
-    drawDebugLine(x1,y1,z1,0,0,1,x3,y3,z3,0,0,1);
-    drawDebugLine(x2,y2,z2,0,0,1,x4,y4,z4,0,0,1);
-    drawDebugLine(x3,y3,z3,0,0,1,x4,y4,z4,0,0,1);
-
+        drawDebugLine(x1,y1,z1,0,0,1,x2,y2,z2,0,0,1);
+        drawDebugLine(x1,y1,z1,0,0,1,x3,y3,z3,0,0,1);
+        drawDebugLine(x2,y2,z2,0,0,1,x4,y4,z4,0,0,1);
+        drawDebugLine(x3,y3,z3,0,0,1,x4,y4,z4,0,0,1);
+    end
 end
 
 -- make sure to recreate the global dev helper whenever this script is (re)loaded

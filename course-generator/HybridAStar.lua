@@ -287,7 +287,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 	self.expansions = 0
 	self.yields = 0
 
-	while openList:size() > 0 and self.iterations < 100000 do
+	while openList:size() > 0 and self.iterations < 200000 do
 		-- pop lowest cost node from queue
 		---@type State3D
 		local pred = State3D.pop(openList)
@@ -347,6 +347,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 							succ:insert(openList)
 						end
 					else
+						--self:debug('Invalid node %s (iteration %d)', tostring(succ), self.iterations)
 						succ:close()
 						self.nodes:add(succ)
 					end -- valid node
@@ -496,9 +497,9 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
 			self.currentPathFinder = self.hybridAStarPathFinder
 			local goal = State3D(self.middlePath[1].x, self.middlePath[1].y, self.middlePath[1].nextEdge.angle)
-            print(tostring(self.middlePath))
-            print(tostring(self.startNode))
-            print(tostring(goal))
+            --print(tostring(self.middlePath))
+            --print(tostring(self.startNode))
+            --print(tostring(goal))
 			self.userData.reverseHeading = false
 			return self:resume(self.startNode, goal, self.turnRadius, self.userData, self.allowReverse, self.getNodePenaltyFunc, self.isValidNodeFunc)
 		elseif self.phase == self.START_TO_MIDDLE then
@@ -546,7 +547,7 @@ end
 
 --- Figure out which waypoints should have the reverse attribute in order to make it drivable by the PPC
 function HybridAStarWithAStarInTheMiddle:fixReverseForCourseplay(path)
-    print(tostring(path))
+    --print(tostring(path))
 	path:calculateData()
     -- we rely here on the fact that the start waypoint will be aligned with the vehicle either forward or backward
     -- (about 0 or 180 degrees)
@@ -558,12 +559,12 @@ function HybridAStarWithAStarInTheMiddle:fixReverseForCourseplay(path)
     -- and then keep changing direction when the waypoint direction changes a lot
 	for i = 2, #path do
         path[i].reverse = currentReverse
-		if math.abs(getDeltaAngle(path[i].prevEdge.angle, path[i].nextEdge.angle)) > math.pi / 2 then
+		if math.abs(getDeltaAngle(path[i].prevEdge.angle, path[i].nextEdge.angle)) > 2 * math.pi / 3 then
             currentReverse = not currentReverse
 		end
 	end
 	path:calculateData()
-	print(tostring(path))
+	--print(tostring(path))
 end
 
 -- TODO: put this in a global lib, instead of helpers.lua as helpers.lua depends on courseplay.
