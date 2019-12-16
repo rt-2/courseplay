@@ -311,3 +311,29 @@ function PathfinderUtil.startPathfindingFromVehicleToNode(vehicle, goalNode, sid
     local context = PathfinderUtil.Context(PathfinderUtil.VehicleData(vehicle, true, 1), PathfinderUtil.FieldData(fieldNum))
     return PathfinderUtil.startPathfinding(start, goal, context, allowReverse)
 end
+
+function PathfinderUtil.showNodes(pathfinder)
+    if pathfinder and pathfinder.nodes then
+        local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, pathfinder.startNode.x, 0, -pathfinder.startNode.y)
+        cpDebug:drawLineRGB(pathfinder.startNode.x, y + 4, -pathfinder.startNode.y, 0, 255, 0, pathfinder.goalNode.x, y + 4, -pathfinder.goalNode.y)
+        y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, pathfinder.goalNode.x, 0, -pathfinder.goalNode.y)
+        for _, row in pairs(pathfinder.nodes.nodes) do
+            for _, column in pairs(row) do
+                for _, cell in pairs(column) do
+                    local range = pathfinder.nodes.highestCost - pathfinder.nodes.lowestCost
+                    local color = (cell.cost - pathfinder.nodes.lowestCost) * 250 / range
+                    local r, g, b
+                    if cell:isClosed() or true then
+                        r, g, b = 100 + color, 250 - color, 0
+                    else
+                        r, g, b = cell.cost *3, 80, 0
+                    end
+                    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, cell.x, 0, -cell.y)
+                    if cell.pred then
+                        cpDebug:drawLineRGB(cell.x, y + 1, -cell.y, r, g, b, cell.pred.x, y + 1, -cell.pred.y)
+                    end
+                end
+            end
+        end
+    end
+end
