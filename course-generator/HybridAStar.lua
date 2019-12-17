@@ -237,7 +237,7 @@ function HybridAStar:init()
 	self.path = {}
 	self.iterations = 0
 	-- if the goal is within self.deltaPos meters we consider it reached
-	self.deltaPos = 1
+	self.deltaPos = 1.1
 	-- if the goal heading is within self.deltaThetaDeg degrees we consider it reached
 	self.deltaThetaDeg = 5
 	-- the same two parameters are used to discretize the continuous state space
@@ -360,8 +360,10 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 		self.iterations = self.iterations + 1
 	end
 	self.path = {}
-	self:debug('No path found: iterations %d, yields %d', self.iterations, self.yields)
-	return true, nil
+	self:debug('No path found: iterations %d, yields %d, cost %.1f - %.1f', self.iterations, self.yields,
+            self.nodes.lowestCost, self.nodes.highestCost)
+
+    return true, nil
 end
 
 ---@param node State3D

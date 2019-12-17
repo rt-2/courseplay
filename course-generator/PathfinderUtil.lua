@@ -336,4 +336,14 @@ function PathfinderUtil.showNodes(pathfinder)
             end
         end
     end
+    if pathfinder and pathfinder.middlePath then
+        for i = 2, #pathfinder.middlePath do
+            local cp = pathfinder.middlePath[i]
+            local cy = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, cp.x, 0, -cp.y)
+            local pp = pathfinder.middlePath[i - 1]
+            local py = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, pp.x, 0, -pp.y)
+            cpDebug:drawLine(cp.x, cy + 3, -cp.y, 0, 0, 100, pp.x, py + 3, -pp.y)
+
+        end
+    end
 end
