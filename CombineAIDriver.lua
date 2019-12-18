@@ -34,11 +34,13 @@ CombineAIDriver.myStates = {
 	REVERSING_TO_MAKE_A_POCKET = {},
 	MAKING_POCKET = {},
 	WAITING_FOR_UNLOAD_IN_POCKET = {},
-	WAITING_FOR_UNLOAD_AFTER_COURSE_ENDED = {},
+	WAITING_FOR_UNLOAD_AFTER_FIELDWORK_ENDED = {},
 	WAITING_FOR_UNLOADER_TO_LEAVE = {},
 	RETURNING_FROM_POCKET = {},
 	DRIVING_TO_SELF_UNLOAD = {},
 	SELF_UNLOADING = {},
+	DRIVING_TO_SELF_UNLOAD_AFTER_FIELDWORK_ENDED = {},
+	SELF_UNLOADING_AFTER_FIELDWORK_ENDED = {},
 	RETURNING_FROM_SELF_UNLOAD = {}
 }
 
@@ -132,16 +134,28 @@ end
 function CombineAIDriver:onEndCourse()
 	local fillLevel = self.vehicle:getFillUnitFillLevel(self.combine.fillUnitIndex)
 	if self.state == self.states.ON_FIELDWORK_COURSE and
-			self.fieldworkState == self.states.UNLOAD_OR_REFILL_ON_FIELD and
-			self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
-		self:debug('Self unloading point reached.', fillLevel)
-		self.fieldWorkUnloadOrRefillState = self.states.SELF_UNLOADING
+			self.fieldworkState == self.states.UNLOAD_OR_REFILL_ON_FIELD then
+		if self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
+			self:debug('Self unloading point reached, fill level %.1f.', fillLevel)
+			self.fieldWorkUnloadOrRefillState = self.states.SELF_UNLOADING
+		elseif 	self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD_AFTER_FIELDWORK_ENDED then
+			self:debug('Self unloading point reached after fieldwork ended, fill level %.1f.', fillLevel)
+			self.fieldWorkUnloadOrRefillState = self.states.SELF_UNLOADING_AFTER_FIELDWORK_ENDED
+		end
 	elseif self.state == self.states.ON_FIELDWORK_COURSE and fillLevel > 0 then
-		self:setInfoText(self:getFillLevelInfoText())
-		-- let AutoDrive know we are done and can unload
-		self:debug('Fieldwork done, fill level is %.1f, now waiting to be unloaded.', fillLevel)
-		self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
-		self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_AFTER_COURSE_ENDED
+		if self.vehicle.cp.settings.selfUnload:is(true) and self:startSelfUnload() then
+			self:raiseImplements()
+			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
+			self.fieldWorkUnloadOrRefillState = self.states.DRIVING_TO_SELF_UNLOAD_AFTER_FIELDWORK_ENDED
+			self.ppc:setShortLookaheadDistance()
+
+		else
+			self:setInfoText(self:getFillLevelInfoText())
+			-- let AutoDrive know we are done and can unload
+			self:debug('Fieldwork done, fill level is %.1f, now waiting to be unloaded.', fillLevel)
+			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
+			self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_AFTER_FIELDWORK_ENDED
+		end
 	else
 		UnloadableFieldworkAIDriver.onEndCourse(self)
 	end
@@ -150,6 +164,7 @@ end
 function CombineAIDriver:onWaypointPassed(ix)
 	if self.state == self.states.ON_FIELDWORK_COURSE and
 			(self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD or
+			self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD_AFTER_FIELDWORK_ENDED or
 			self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD) then
 		-- nothing to do while driving to unload and back
 		return UnloadableFieldworkAIDriver.onWaypointPassed(self, ix)
@@ -186,7 +201,6 @@ function CombineAIDriver:changeToFieldworkUnloadOrRefill()
 		self:checkFruit()
 		-- TODO: check around turn maneuvers we may not want to pull back before a turn
 		if self.vehicle.cp.settings.selfUnload:is(true) and self:startSelfUnload() then
-			self:debug('Raising implements')
 			self:raiseImplements()
 			self.fieldworkState = self.states.UNLOAD_OR_REFILL_ON_FIELD
 			self.fieldWorkUnloadOrRefillState = self.states.DRIVING_TO_SELF_UNLOAD
@@ -263,7 +277,7 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 		else
 			self:setSpeed(0)
 		end
-	elseif self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_COURSE_ENDED then
+	elseif self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_FIELDWORK_ENDED then
 		local fillLevel = self.vehicle:getFillUnitFillLevel(self.combine.fillUnitIndex)
 		if fillLevel < 0.01 then
 			self:clearInfoText(self:getFillLevelInfoText())
@@ -295,6 +309,8 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 		end
 	elseif self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
 		self:setSpeed(self.vehicle.cp.speeds.field)
+	elseif self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD_AFTER_FIELDWORK_ENDED then
+		self:setSpeed(self.vehicle.cp.speeds.field)
 	elseif self.fieldWorkUnloadOrRefillState == self.states.SELF_UNLOADING then
 		self:setSpeed(0)
 		if self:unloadFinished() then
@@ -305,6 +321,12 @@ function CombineAIDriver:driveFieldworkUnloadOrRefill()
 				self:startFieldworkWithPathfinding(self.aiDriverData.continueFieldworkAtWaypoint)
 			end
 			self.ppc:setNormalLookaheadDistance()
+		end
+	elseif self.fieldWorkUnloadOrRefillState == self.states.SELF_UNLOADING_AFTER_FIELDWORK_ENDED then
+		self:setSpeed(0)
+		if self:unloadFinished() then
+			self:debug('Self unloading finished, returning to fieldwork')
+			UnloadableFieldworkAIDriver.onEndCourse(self)
 		end
 	elseif self.fieldWorkUnloadOrRefillState == self.states.RETURNING_FROM_SELF_UNLOAD then
 		self:setSpeed(self.vehicle.cp.speeds.field)
@@ -554,7 +576,7 @@ function CombineAIDriver:isWaitingForUnload()
 		(self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_OR_REFILL or
 			self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_IN_POCKET or
 			self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_PULLED_BACK or
-			self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_COURSE_ENDED)
+			self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_FIELDWORK_ENDED)
 end
 
 --- Interface for AutoDrive
@@ -562,7 +584,7 @@ end
 function CombineAIDriver:isWaitingForUnloadAfterCourseEnded()
 	return self.state == self.states.ON_FIELDWORK_COURSE and
 		self.fieldworkState == self.states.UNLOAD_OR_REFILL_ON_FIELD and
-		self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_COURSE_ENDED
+		self.fieldWorkUnloadOrRefillState == self.states.WAITING_FOR_UNLOAD_AFTER_FIELDWORK_ENDED
 end
 
 
@@ -942,6 +964,8 @@ function CombineAIDriver:onPathfindingDone(path)
 			self:startFieldworkWithPathfinding(self.aiDriverData.continueFieldworkAtWaypoint)
 		elseif self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD then
 			self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_OR_REFILL
+		elseif self.fieldWorkUnloadOrRefillState == self.states.DRIVING_TO_SELF_UNLOAD_AFTER_FIELDWORK_ENDED then
+			self.fieldWorkUnloadOrRefillState = self.states.WAITING_FOR_UNLOAD_AFTER_FIELDWORK_ENDED
 		end
 		return false
 	end

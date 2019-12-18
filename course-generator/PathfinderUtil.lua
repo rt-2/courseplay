@@ -31,6 +31,7 @@ function PathfinderUtil.VehicleData:init(vehicle, withImplements, buffer)
     self.name = vehicle.getName and vehicle:getName() or 'N/A'
     -- distance of the sides of a rectangle from the direction node of the vehicle
     -- in other words, the X and Z offsets of the corners from the direction node
+    -- negative is to the rear and to the right
     -- this is the bounding box of the entire vehicle with all attached implements
     self.dFront, self.dRear, self.dLeft, self.dRight = 0, 0, 0, 0
     self.rectangles = {}

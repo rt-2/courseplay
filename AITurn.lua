@@ -267,6 +267,10 @@ function KTurn:turn(dt)
 end
 
 function KTurn:onBlocked()
+	if self.driver:holdInTurnManeuver(false) then
+		-- not really blocked just waiting for the straw for example
+		return
+	end
 	self.stateAfterBlocked = self.state
 	self.blockedTimer = self.vehicle.timer
 	if self.state == self.states.REVERSE then
