@@ -901,7 +901,7 @@ function CombineAIDriver:startSelfUnload()
 		local fieldNum = courseplay.fields:onWhichFieldAmI(self.vehicle)
 		local done, path
 		self.pathfinder, done, path = PathfinderUtil.startPathfindingFromVehicleToNode(
-				self.vehicle, bestTrailer.rootNode, -self.pipeOffset, true, fieldNum)
+				self.vehicle, bestTrailer.rootNode, -self.pipeOffset - 0.2, true, fieldNum)
 		if done then
 			return self:onPathfindingDone(path)
 		end

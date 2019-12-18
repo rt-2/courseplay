@@ -1425,7 +1425,7 @@ function AIDriver:onDraw()
 		self.course:draw()
 	end
 	if CpManager.isDeveloper and self.pathfinder then
-		PathfinderUtil.showNodes(self.pathfinder)
+		--PathfinderUtil.showNodes(self.pathfinder)
 	end
 
 end

@@ -45,17 +45,17 @@ function DevHelper:update()
         end
 
         self.vehicle = g_currentMission.controlledVehicle
-        node = g_currentMission.controlledVehicle.rootNode
+        node = AIDriverUtil.getDirectionNode(g_currentMission.controlledVehicle)
         lx, _, lz = localDirectionToWorld(node, 0, 0, 1)
-        self.vehicleData = PathfinderUtil.VehicleData(g_currentMission.controlledVehicle, false)
+        self.vehicleData = PathfinderUtil.VehicleData(g_currentMission.controlledVehicle, true)
     else
         node = g_currentMission.player.cameraNode
         lx, _, lz = localDirectionToWorld(node, 0, 0, -1)
     end
 
     if self.vehicleData then
-        local myCollisionData = PathfinderUtil.getCollisionData(node, self.vehicleData, 'me')
-        hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(myCollisionData)
+        self.collisionData = PathfinderUtil.getCollisionData(node, self.vehicleData, 'me')
+        hasCollision, vehicle = PathfinderUtil.findCollidingVehicles(self.collisionData, node, self.vehicleData)
         if hasCollision then
             self.data.vehicleOverlap = vehicle
         else
@@ -136,6 +136,11 @@ function DevHelper:draw()
     DebugUtil.renderTable(0.3, 0.3, 0.02, data, 0.05)
     self:drawCourse()
     self:showVehicleSize()
+    for _, vehicle in pairs(g_currentMission.vehicles) do
+        if vehicle ~= g_currentMission.controlledVehicle and vehicle.cp and vehicle.cp.driver then
+            vehicle.cp.driver:onDraw()
+        end
+    end
 end
 
 ---@param path State3D[]
@@ -180,24 +185,34 @@ function DevHelper:showVehicleSize()
     if not vehicle then return end
     local x, z, yRot = PathfinderUtil.getNodePositionAndDirection(AIDriverUtil.getDirectionNode(vehicle))
     local node = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
-    if not PathfinderUtil.helperNode then
-        PathfinderUtil.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
+    if not g_devHelper.helperNode then
+        g_devHelper.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
     end
     local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
-    setTranslation(PathfinderUtil.helperNode, node.x, y, -node.y)
-    setRotation(PathfinderUtil.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
+    setTranslation(g_devHelper.helperNode, node.x, y, -node.y)
+    setRotation(g_devHelper.helperNode, 0, courseGenerator.toCpAngle(node.t), 0)
    
     if self.vehicleData then
-        local x1,y1,z1 = localToWorld(PathfinderUtil.helperNode, -self.vehicleData.dRight, 2, self.vehicleData.dFront);
-        local x2,y2,z2 = localToWorld(PathfinderUtil.helperNode, self.vehicleData.dLeft, 2, self.vehicleData.dFront);
-        local x3,y3,z3 = localToWorld(PathfinderUtil.helperNode, -self.vehicleData.dRight, 2, -self.vehicleData.dRear);
-        local x4,y4,z4 = localToWorld(PathfinderUtil.helperNode, self.vehicleData.dLeft, 2, -self.vehicleData.dRear);
+        for _, rectangle in ipairs(self.vehicleData.rectangles) do
+            local x1,y1,z1 = localToWorld(g_devHelper.helperNode, rectangle.dRight, 2, rectangle.dFront);
+            local x2,y2,z2 = localToWorld(g_devHelper.helperNode, rectangle.dLeft, 2, rectangle.dFront);
+            local x3,y3,z3 = localToWorld(g_devHelper.helperNode, rectangle.dRight, 2, rectangle.dRear);
+            local x4,y4,z4 = localToWorld(g_devHelper.helperNode, rectangle.dLeft, 2, rectangle.dRear);
 
-        drawDebugLine(x1,y1,z1,0,0,1,x2,y2,z2,0,0,1);
-        drawDebugLine(x1,y1,z1,0,0,1,x3,y3,z3,0,0,1);
-        drawDebugLine(x2,y2,z2,0,0,1,x4,y4,z4,0,0,1);
-        drawDebugLine(x3,y3,z3,0,0,1,x4,y4,z4,0,0,1);
+            drawDebugLine(x1,y1,z1,0,0,1,x2,y2,z2,0,0,1);
+            drawDebugLine(x1,y1,z1,0,0,1,x3,y3,z3,0,0,1);
+            drawDebugLine(x2,y2,z2,0,0,1,x4,y4,z4,0,0,1);
+            drawDebugLine(x3,y3,z3,0,0,1,x4,y4,z4,0,0,1);
+        end
     end
+    if self.collisionData then
+        for i = 1, 4 do
+            local cp = self.collisionData.corners[i]
+            local pp = self.collisionData.corners[i > 1 and i - 1 or 4]
+            cpDebug:drawLine(cp.x, cp.y + 0.4, cp.z, 1, 1, 0, pp.x, pp.y + 0.4, pp.z)
+        end
+    end
+
 end
 
 -- make sure to recreate the global dev helper whenever this script is (re)loaded

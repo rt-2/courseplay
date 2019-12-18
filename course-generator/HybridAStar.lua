@@ -354,6 +354,7 @@ function HybridAStar:findPath(start, goal, turnRadius, userData, allowReverse, g
 				end
 			end
 			-- node as been expanded, close it to prevent expansion again
+			--self:debug(tostring(pred))
 			pred:close()
 			self.expansions = self.expansions + 1
 		end
@@ -445,7 +446,7 @@ function HybridAStarWithAStarInTheMiddle:start(start, goal, turnRadius, userData
 		self.phase = self.ALL_HYBRID
         self:debug('Goal is closer than %d, use one phase pathfinding only', self.hybridRange * 3)
 		self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
-		self.currentPathFinder = self.hybridAStarPathFinder
+		self.currentPathfinder = self.hybridAStarPathFinder
 		-- swap start and goal as the path will always start exactly at the start point but will only approximately end
 		-- at the goal. Here we want to end up exactly on the goal point
 		self.startNode:reverseHeading()
@@ -458,7 +459,7 @@ function HybridAStarWithAStarInTheMiddle:start(start, goal, turnRadius, userData
 		self.phase = self.MIDDLE
         self:debug('Finding direct path between start and goal...')
 		self.coroutine = coroutine.create(self.aStarPathFinder.findPath)
-		self.currentPathFinder = self.aStarPathFinder
+		self.currentPathfinder = self.aStarPathFinder
 		self.userData.reverseHeading = false
 		return self:resume(self.startNode, self.goalNode, turnRadius, self.userData, false, getNodePenaltyFunc, isValidNodeFunc)
 	end
@@ -466,7 +467,7 @@ end
 
 --- The resume() of this pathfinder is more complicated as it handles essentially three separate pathfinding runs
 function HybridAStarWithAStarInTheMiddle:resume(...)
-	local ok, done, path = coroutine.resume(self.coroutine, self.currentPathFinder, ...)
+	local ok, done, path = coroutine.resume(self.coroutine, self.currentPathfinder, ...)
 	if not ok then
 		self.coroutine = nil
 		print(done)
@@ -497,7 +498,7 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 			self.phase = self.START_TO_MIDDLE
 			-- generate a hybrid part from the start to the middle section's start
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
-			self.currentPathFinder = self.hybridAStarPathFinder
+			self.currentPathfinder = self.hybridAStarPathFinder
 			local goal = State3D(self.middlePath[1].x, self.middlePath[1].y, self.middlePath[1].nextEdge.angle)
             --print(tostring(self.middlePath))
             --print(tostring(self.startNode))
@@ -518,7 +519,7 @@ function HybridAStarWithAStarInTheMiddle:resume(...)
 			self.phase = self.MIDDLE_TO_END
             self:debug('Finding path between middle section and goal...')
 			self.coroutine = coroutine.create(self.hybridAStarPathFinder.findPath)
-			self.currentPathFinder = self.hybridAStarPathFinder
+			self.currentPathfinder = self.hybridAStarPathFinder
 			-- swap start and goal as the path will always start exactly at the start point but will only approximately end
 			-- at the goal. Here we want to end up exactly on the goal point
 			local start = State3D(self.middlePath[#self.middlePath].x, self.middlePath[#self.middlePath].y, self.middlePath[#self.middlePath].prevEdge.angle)

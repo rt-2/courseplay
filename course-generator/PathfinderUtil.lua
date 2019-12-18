@@ -22,27 +22,42 @@ PathfinderUtil = {}
 ---@class PathfinderUtil.VehicleData
 PathfinderUtil.VehicleData = CpObject()
 
+--- VehicleData is used to perform a hierarchical collision detection. The vehicle's bounding box
+--- includes all implements and checked first for collisions. If there is a hit, the individual parts
+--- (vehicle and implements) are each checked for collision. This is to avoid false alarms in case of
+--- non-rectangular shapes, like a combine with a wide header
 function PathfinderUtil.VehicleData:init(vehicle, withImplements, buffer)
     self.turnRadius = vehicle.cp and vehicle.cp.turnDiameter and vehicle.cp.turnDiameter / 2 or 10
     self.name = vehicle.getName and vehicle:getName() or 'N/A'
+    -- distance of the sides of a rectangle from the direction node of the vehicle
+    -- in other words, the X and Z offsets of the corners from the direction node
+    -- this is the bounding box of the entire vehicle with all attached implements
     self.dFront, self.dRear, self.dLeft, self.dRight = 0, 0, 0, 0
-    self:calculateSizeOfObjectList(vehicle, {{object = vehicle}}, buffer)
+    self.rectangles = {}
+    self:calculateSizeOfObjectList(vehicle, {{object = vehicle}}, buffer, self.rectangles)
     if withImplements then
-        self:calculateSizeOfObjectList(vehicle, vehicle:getAttachedImplements(), buffer)
+        self:calculateSizeOfObjectList(vehicle, vehicle:getAttachedImplements(), buffer, self.rectangles)
     end
 end
 
 --- calculate the bounding box of all objects in the implement list. This is not a very good way to figure out how
 --- big a vehicle is as the sizes of foldable implements seem to be in the folded state but should be ok for
 --- now.
-function PathfinderUtil.VehicleData:calculateSizeOfObjectList(vehicle, implements, buffer)
+function PathfinderUtil.VehicleData:calculateSizeOfObjectList(vehicle, implements, buffer, rectangles)
     for _, implement in ipairs(implements) do
         --print(implement.object:getName())
-        local _, _, rootToDirectionNodeDistance = localToLocal(AIDriverUtil.getDirectionNode(vehicle), implement.object.rootNode, 0, 0, 0)
-        self.dFront = math.max(self.dFront, implement.object.sizeLength / 2 + implement.object.lengthOffset - rootToDirectionNodeDistance + (buffer or 0))
-        self.dRear = math.max(self.dRear, implement.object.sizeLength / 2 - implement.object.lengthOffset + rootToDirectionNodeDistance + (buffer or 0))
-        self.dLeft = math.max(self.dLeft, implement.object.sizeWidth / 2)
-        self.dRight = math.max(self.dRight, implement.object.sizeWidth / 2)
+        local _, _, rootToDirectionNodeDistance = localToLocal(implement.object.rootNode, AIDriverUtil.getDirectionNode(vehicle), 0, 0, 0)
+        local rectangle = {
+            dFront = rootToDirectionNodeDistance + implement.object.sizeLength / 2 + implement.object.lengthOffset + (buffer or 0),
+            dRear = rootToDirectionNodeDistance - implement.object.sizeLength / 2 - implement.object.lengthOffset + (buffer or 0),
+            dLeft = implement.object.sizeWidth / 2,
+            dRight = -implement.object.sizeWidth / 2
+        }
+        table.insert(rectangles, rectangle)
+        self.dFront = math.max(self.dFront, rectangle.dFront)
+        self.dRear  = math.min(self.dRear,  rectangle.dRear)
+        self.dLeft  = math.max(self.dLeft,  rectangle.dLeft)
+        self.dRight = math.min(self.dRight, rectangle.dRight)
     end
     --courseplay.debugVehicle(7, vehicle, 'Size: dFront %.1f, dRear %.1f, dLeft = %.1f, dRight = %.1f',
     --        self.dFront, self.dRear, self.dLeft, self.dRight)
@@ -83,16 +98,17 @@ function PathfinderUtil.Context:init(vehicleData, fieldData)
 end
 
 --- Calculate the four corners of a rectangle around a node (for example the area covered by a vehicle)
+--- the data returned by this is the rectangle from the vehicle data translated and rotated to the node
 function PathfinderUtil.getCollisionData(node, vehicleData)
     local x, y, z
     local corners = {}
-    x, y, z = localToWorld(node, - vehicleData.dRight, 0, - vehicleData.dRear)
+    x, y, z = localToWorld(node, vehicleData.dRight, 0, vehicleData.dRear)
     table.insert(corners, {x = x, y = y, z = z})
-    x, y, z = localToWorld(node, - vehicleData.dRight, 0, vehicleData.dFront)
+    x, y, z = localToWorld(node, vehicleData.dRight, 0, vehicleData.dFront)
     table.insert(corners, {x = x, y = y, z = z})
     x, y, z = localToWorld(node, vehicleData.dLeft, 0, vehicleData.dFront)
     table.insert(corners, {x = x, y = y, z = z})
-    x, y, z = localToWorld(node, vehicleData.dLeft, 0, - vehicleData.dRear)
+    x, y, z = localToWorld(node, vehicleData.dLeft, 0, vehicleData.dRear)
     table.insert(corners, {x = x, y = y, z = z})
     x, y, z = localToWorld(node, 0, 0, 0)
     local center = {x = x, y = y, z = z}
@@ -112,12 +128,19 @@ function PathfinderUtil.setUpVehicleCollisionData(myVehicle)
     end
 end
 
-function PathfinderUtil.findCollidingVehicles(myCollisionData)
+function PathfinderUtil.findCollidingVehicles(myCollisionData, node, myVehicleData)
     if not PathfinderUtil.vehicleCollisionData then return false end
     for _, collisionData in pairs(PathfinderUtil.vehicleCollisionData) do
+        -- check for collision with the vehicle's bounding box
         if PathfinderUtil.doRectanglesOverlap(myCollisionData.corners, collisionData.corners) then
             -- courseplay.debugFormat(7, 'x = %.1f, z = %.1f, %s', myCollisionData.center.x, myCollisionData.center.z, collisionData.name)
-            return true, collisionData.name
+            -- check for collision of the individual parts
+            for _, rectangle in ipairs(myVehicleData.rectangles) do
+                local partCollisionData = PathfinderUtil.getCollisionData(node, rectangle)
+                if PathfinderUtil.doRectanglesOverlap(partCollisionData.corners, collisionData.corners) then
+                    return true, collisionData.name
+                end
+            end
         end
     end
     return false
@@ -232,7 +255,7 @@ function PathfinderUtil.getNodePenalty(node)
     local penalty = 0
     local isField, area, totalArea = courseplay:isField(node.x, -node.y, areaSize, areaSize)
     if area / totalArea < minRequiredAreaRatio then
-        penalty = penalty + 5
+        penalty = penalty + 2
     end
     if isField then
         local hasFruit, fruitValue = PathfinderUtil.hasFruit(node.x, -node.y, areaSize, areaSize)
@@ -254,13 +277,15 @@ function PathfinderUtil.isValidNode(node, context)
         PathfinderUtil.helperNode = courseplay.createNode('pathfinderHelper', node.x, -node.y, 0)
     end
     local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, node.x, 0, -node.y);
-    setTranslation(PathfinderUtil.helperNode, node.x, y, -node.y)
+    setTranslation(PathfinderUtil.helperNode, node.x, y + 0.5, -node.y)
     local heading = context.reverseHeading and courseGenerator.toCpAngle(node:getReverseHeading()) or courseGenerator.toCpAngle(node.t)
     setRotation(PathfinderUtil.helperNode, 0, heading, 0)
-    local myCollisionData = PathfinderUtil.getCollisionData(PathfinderUtil.helperNode, context.vehicleData, 'me')
+    myCollisionData = PathfinderUtil.getCollisionData(PathfinderUtil.helperNode, context.vehicleData, 'me')
     local _, _, yRot = PathfinderUtil.getNodePositionAndDirection(PathfinderUtil.helperNode)
-    local collidingShapes = PathfinderUtil.findCollidingShapes(myCollisionData, yRot, context.vehicleData)
-    return (not PathfinderUtil.findCollidingVehicles(myCollisionData) and collidingShapes == 0)
+    -- for debug purposes only, store validity info on node
+    node.collidingShapes = PathfinderUtil.findCollidingShapes(myCollisionData, yRot, context.vehicleData)
+    node.isColliding, node.vehicle = PathfinderUtil.findCollidingVehicles(myCollisionData, PathfinderUtil.helperNode, context.vehicleData)
+    return (not node.isColliding and node.collidingShapes == 0)
 end
 
 --- Interface function to start the pathfinder
@@ -291,7 +316,7 @@ function PathfinderUtil.startPathfindingFromVehicleToWaypoint(vehicle, goalWaypo
     local start = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     local goal = State3D(goalWaypoint.x, -goalWaypoint.z, courseGenerator.fromCpAngleDeg(goalWaypoint.angle))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    local context = PathfinderUtil.Context(PathfinderUtil.VehicleData(vehicle, true, 1), PathfinderUtil.FieldData(fieldNum))
+    local context = PathfinderUtil.Context(PathfinderUtil.VehicleData(vehicle, true, 0.2), PathfinderUtil.FieldData(fieldNum))
     return PathfinderUtil.startPathfinding(start, goal, context, allowReverse)
 end
 
@@ -308,29 +333,31 @@ function PathfinderUtil.startPathfindingFromVehicleToNode(vehicle, goalNode, sid
     x, z, yRot = PathfinderUtil.getNodePositionAndDirection(goalNode, sideOffset)
     local goal = State3D(x, -z, courseGenerator.fromCpAngle(yRot))
     PathfinderUtil.setUpVehicleCollisionData(vehicle)
-    local context = PathfinderUtil.Context(PathfinderUtil.VehicleData(vehicle, true, 1), PathfinderUtil.FieldData(fieldNum))
+    local context = PathfinderUtil.Context(PathfinderUtil.VehicleData(vehicle, true, 0.2), PathfinderUtil.FieldData(fieldNum))
     return PathfinderUtil.startPathfinding(start, goal, context, allowReverse)
 end
 
 function PathfinderUtil.showNodes(pathfinder)
-    if pathfinder and pathfinder.nodes then
-        local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, pathfinder.startNode.x, 0, -pathfinder.startNode.y)
-        cpDebug:drawLineRGB(pathfinder.startNode.x, y + 4, -pathfinder.startNode.y, 0, 255, 0, pathfinder.goalNode.x, y + 4, -pathfinder.goalNode.y)
-        y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, pathfinder.goalNode.x, 0, -pathfinder.goalNode.y)
-        for _, row in pairs(pathfinder.nodes.nodes) do
+    if pathfinder and pathfinder.hybridAStarPathFinder and pathfinder.hybridAStarPathFinder.nodes then
+        for _, row in pairs(pathfinder.hybridAStarPathFinder.nodes.nodes) do
             for _, column in pairs(row) do
                 for _, cell in pairs(column) do
-                    local range = pathfinder.nodes.highestCost - pathfinder.nodes.lowestCost
-                    local color = (cell.cost - pathfinder.nodes.lowestCost) * 250 / range
-                    local r, g, b
-                    if cell:isClosed() or true then
-                        r, g, b = 100 + color, 250 - color, 0
-                    else
-                        r, g, b = cell.cost *3, 80, 0
-                    end
-                    local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, cell.x, 0, -cell.y)
-                    if cell.pred then
-                        cpDebug:drawLineRGB(cell.x, y + 1, -cell.y, r, g, b, cell.pred.x, y + 1, -cell.pred.y)
+                    if cell.x and cell.y then
+                        local range = pathfinder.hybridAStarPathFinder.nodes.highestCost - pathfinder.hybridAStarPathFinder.nodes.lowestCost
+                        local color = (cell.cost - pathfinder.hybridAStarPathFinder.nodes.lowestCost) * 250 / range
+                        local r, g, b
+                        if cell:isClosed() or true then
+                            r, g, b = 100 + color, 250 - color, 0
+                        else
+                            r, g, b = cell.cost *3, 80, 0
+                        end
+                        local y = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, cell.x, 0, -cell.y)
+                        if cell.pred and cell.pred.y then
+                            cpDebug:drawLineRGB(cell.x, y + 1, -cell.y, r, g, b, cell.pred.x, y + 1, -cell.pred.y)
+                        end
+                        if cell.isColliding then
+                            cpDebug:drawPoint(cell.x, y + 1.2, -cell.y, 100, 0, 0)
+                        end
                     end
                 end
             end
@@ -343,7 +370,25 @@ function PathfinderUtil.showNodes(pathfinder)
             local pp = pathfinder.middlePath[i - 1]
             local py = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, pp.x, 0, -pp.y)
             cpDebug:drawLine(cp.x, cy + 3, -cp.y, 0, 0, 100, pp.x, py + 3, -pp.y)
-
+        end
+    end
+    if PathfinderUtil.helperNode then
+        DebugUtil.drawDebugNode(PathfinderUtil.helperNode, 'Pathfinder')
+    end
+    if myCollisionData then
+        for i = 1, 4 do
+            local cp = myCollisionData.corners[i]
+            local pp = myCollisionData.corners[i > 1 and i - 1 or 4]
+            cpDebug:drawLine(cp.x, cp.y + 0.4, cp.z, 1, 1, 0, pp.x, pp.y + 0.4, pp.z)
+        end
+    end
+    if PathfinderUtil.vehicleCollisionData then
+        for _, collisionData in pairs(PathfinderUtil.vehicleCollisionData) do
+            for i = 1, 4 do
+                local cp = collisionData.corners[i]
+                local pp = collisionData.corners[i > 1 and i - 1 or 4]
+                cpDebug:drawLine(cp.x, cp.y + 0.4, cp.z, 1, 1, 0, pp.x, pp.y + 0.4, pp.z)
+            end
         end
     end
 end
