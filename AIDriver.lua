@@ -650,12 +650,13 @@ function AIDriver:resetSpeed()
 		self:setLastMoveCommandTime(self.vehicle.timer)
 		if self.vehicle:getLastSpeed() > 0.5 then
 			self.lastRealMovingTime = self.vehicle.timer
+			self.stoppedButShouldBeMoving = false
+		elseif not self.stoppedButShouldBeMoving then
+			self.stoppedMovingAt = self.vehicle.timer
+			self.stoppedButShouldBeMoving = true
 		end
 	else
 		self.lastStopCommandTime = self.vehicle.timer
-		if self.vehicle:getLastSpeed() <= 0.5 then
-			self.lastStoppedTime = self.vehicle.timer
-		end
 	end
 	-- reset speed limit for the next loop
 	self.speed = math.huge
@@ -1448,7 +1449,10 @@ function AIDriver:refreshHUD()
 end
 
 function AIDriver:checkIfBlocked()
-	if self.lastStoppedTime and self.lastStopCommandTime and self.lastStoppedTime > self.lastStopCommandTime + 3000 then
+	if self.stoppedButShouldBeMoving and self.stoppedMovingAt then
+		self:debugSparse('stopped moving at %d (%d)', self.stoppedMovingAt, self.vehicle.timer - self.stoppedMovingAt)
+	end
+	if self.stoppedButShouldBeMoving and self.stoppedMovingAt and self.stoppedMovingAt + 3000 < self.vehicle.timer then
 		if not self.blocked then
 			self:onBlocked()
 		end
