@@ -3,6 +3,7 @@ function courseplay:onMouseEvent(posX, posY, isDown, isUp, mouseButton)
 	-- Input binding debug
 	local vehicle = g_currentMission.controlledVehicle		
 	if not vehicle or not vehicle.hasCourseplaySpec then return end
+  courseEditor:updateMouseState(vehicle, posX, posY, isDown, isUp, mouseButton)
 	
 	--print(string.format('courseplay:mouseEvent(posX(%s), posY(%s), isDown(%s), isUp(%s), mouseButton(%s))', tostring(posX), tostring(posY), tostring(isDown), tostring(isUp), tostring(mouseButton) ))
 	--print(string.format("if isUp(%s) and mouseButton(%s) == courseplay.inputBindings.mouse.secondaryButtonId(%s) and Enterable.getIsEntered(self)(%s) then"
@@ -153,9 +154,9 @@ function courseplay:mouseIsInArea(mouseX, mouseY, areaX1, areaX2, areaY1, areaY2
 end;
 
 function courseplay:setCourseplayFunc(func, value, noEventSend, page)
-	--print(string.format("courseplay:setCourseplayFunc( %s, %s, %s, %s)",tostring(func), tostring(value), tostring(noEventSend), tostring(page)))
+	courseplay:debug("setCourseplayFunc: function: " .. func .. " value: " .. tostring(value) .. " noEventSend: " .. tostring(noEventSend) .. " page: " .. tostring(page), 5)
 	if noEventSend ~= true then
-		--Tommi CourseplayEvent.sendEvent(self, func, value,noEventSend,page); -- Die Funktion ruft sendEvent auf und übergibt 3 Werte   (self "also mein ID", action, "Ist eine Zahl an der ich festmache welches Fenster ich aufmachen will", state "Ist der eigentliche Wert also true oder false"
+		CourseplayEvent.sendEvent(self, func, value,noEventSend,page); -- Die Funktion ruft sendEvent auf und übergibt 3 Werte   (self "also mein ID", action, "Ist eine Zahl an der ich festmache welches Fenster ich aufmachen will", state "Ist der eigentliche Wert also true oder false"
 	end;
 	if value == "nil" then
 		value = nil
@@ -167,6 +168,7 @@ function courseplay:setCourseplayFunc(func, value, noEventSend, page)
 end
 
 function courseplay:executeFunction(self, func, value, page)
+	courseplay:debug("executeFunction: function: " .. func .. " value: " .. tostring(value) .. " page: " .. tostring(page), 5)
 	if func == "setMPGlobalInfoText" then
 		CpManager:setGlobalInfoText(self, value, page)
 		courseplay:debug("					setting infoText: "..value..", force remove: "..tostring(page),5)
@@ -183,12 +185,13 @@ function courseplay:executeFunction(self, func, value, page)
 		g_currentMission.hud.guiSoundPlayer:playSample(GuiSoundPlayer.SOUND_SAMPLES.CLICK)
 	end
 	courseplay:debug(('%s: calling function "%s(%s)"'):format(nameNum(self), tostring(func), tostring(value)), 18);
-
 	if func ~= "rowButton" then
 		--@source: http://stackoverflow.com/questions/1791234/lua-call-function-from-a-string-with-function-name
 		assert(loadstring('courseplay:' .. func .. '(...)'))(self, value);
 		courseplay.hud:setReloadPageOrder(self, self.cp.hud.currentPage, true);
-	--[[else
+	else
+		courseplay:debug(('%s: calling rowButton function !!!'):format(nameNum(self)), 5);
+		--[[
 		local page = Utils.getNoNil(page, self.cp.hud.currentPage);
 		local line = value;
 		if page == 0 then
@@ -457,6 +460,28 @@ function courseplay.inputActionCallback(vehicle, actionName, keyStatus)
 						vehicle:setCourseplayFunc('stop_record', nil, false, 1);
 					end;
 				end;
+      elseif actionName == 'COURSEPLAY_EDITOR_TOGGLE' then
+        courseEditor:setEnabled(not courseEditor.enabled, vehicle)
+      elseif actionName == 'COURSEPLAY_EDITOR_UNDO' then
+        courseEditor:undo()
+      elseif actionName == 'COURSEPLAY_EDITOR_SAVE' then
+        courseEditor:save()
+      elseif actionName == 'COURSEPLAY_EDITOR_SPEED_INCREASE' then
+       courseEditor:increaseSpeed()
+      elseif actionName == 'COURSEPLAY_EDITOR_SPEED_DECREASE' then
+       courseEditor:decreaseSpeed()
+      elseif actionName == 'COURSEPLAY_EDITOR_DELETE_WAYPOINT' then
+       courseEditor:delete()
+      elseif actionName == 'COURSEPLAY_EDITOR_DELETE_NEXT_WAYPOINT' then
+      courseEditor:deleteNext()      
+      elseif actionName == 'COURSEPLAY_EDITOR_DELETE_TO_START' then
+       courseEditor:deleteToStart()
+      elseif actionName == 'COURSEPLAY_EDITOR_DELETE_TO_END' then
+       courseEditor:deleteToEnd()
+      elseif actionName == 'COURSEPLAY_EDITOR_INSERT_WAYPOINT' then
+       courseEditor:insert()
+      elseif actionName == 'COURSEPLAY_EDITOR_CYCLE_WAYPOINT_TYPE' then
+       courseEditor:cycleType()
 			elseif actionName == 'COURSEPLAY_CANCELWAIT' and
 				(vehicle.cp.HUD1wait and vehicle.cp.canDrive and vehicle.cp.isDriving) or (vehicle.cp.driver and vehicle.cp.driver:isWaiting()) then
 				vehicle:setCourseplayFunc('cancelWait', true, false, 1);
