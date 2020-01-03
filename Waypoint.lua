@@ -87,7 +87,7 @@ function Waypoint:set(cpWp, cpIndex)
 	self.cz = self.z
 	self.angle = cpWp.angle or nil
 	self.radius = cpWp.radius or nil
-	self.rev = cpWp.rev or cpWp.turnReverse or false
+	self.rev = cpWp.rev or cpWp.turnReverse or cpWp.reverse or false
 	self.speed = cpWp.speed
 	self.cpIndex = cpIndex or 0
 	self.turnStart = cpWp.turnStart
@@ -268,6 +268,10 @@ function Course:getNumberOfWaypoints()
 	return #self.waypoints
 end
 
+function Course:getWaypoint(ix)
+	return self.waypoints[ix]
+end
+
 --- Is this a temporary course? Can be used to differentiate between recorded and dynamically generated courses
 -- The Course() object does not use this attribute for anything
 function Course:isTemporary()
@@ -290,13 +294,11 @@ function Course:enrichWaypointData()
 		self.waypoints[i].dToHere = self.length
 		self.waypoints[i].turnsToHere = self.totalTurns
 		self.waypoints[i].dx, _, self.waypoints[i].dz, _ = courseplay:getWorldDirection(cx, 0, cz, nx, 0, nz)
-		if not self.waypoints[i].angle then
-			-- TODO: fix this weird coordinate system transformation from x/z to x/y
-			local dx, dz = nx - cx, -nz - (-cz)
-			local angle = toPolar(dx, dz)
-			-- and now back to x/z
-			self.waypoints[i].angle = courseGenerator.toCpAngle(angle)
-		end
+    -- TODO: fix this weird coordinate system transformation from x/z to x/y
+    local dx, dz = nx - cx, -nz - (-cz)
+    local angle = toPolar(dx, dz)
+    -- and now back to x/z
+    self.waypoints[i].angle = courseGenerator.toCpAngleDeg(angle)
 		self.waypoints[i].calculatedRadius = self:calculateRadius(i)
 	end
 	-- make the last waypoint point to the same direction as the previous so we don't
